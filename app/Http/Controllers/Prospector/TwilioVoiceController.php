@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Prospector;
 
 use App\Events\Prospector\InboundCallRinging;
 use App\Http\Controllers\Controller;
-use App\Jobs\Prospector\DialContactIntoConferenceJob;
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\Campaign;
@@ -130,6 +129,13 @@ class TwilioVoiceController extends Controller
         $conferenceName = $request->input('conference', '');
         $contactId = $request->input('contactId');
 
+        Log::error('DEBUG handleIncoming', [
+            'from' => $from,
+            'to' => $to,
+            'conference' => $conferenceName,
+            'contactId' => $contactId,
+        ]);
+
         // Case 1: Direct conference join (transfers, supervisor, parallel dial)
         if ($conferenceName) {
             $response = new VoiceResponse;
@@ -230,10 +236,37 @@ class TwilioVoiceController extends Controller
             'twilio_conference_sid' => $conferenceName,
         ]);
 
-        // Dial the contact into the conference via a queued job.
-        // The TwiML response returns FIRST so the agent connects to the conference
-        // immediately. The job fires moments later to dial the contact's phone.
-        DialContactIntoConferenceJob::dispatch($conferenceName, $contact, $fromNumber, $call);
+        // Dial the contact synchronously. The Twilio API call takes ~1-2s which is
+        // within Twilio's 15s TwiML timeout. The agent's WebRTC connection is being
+        // established in parallel while this executes.
+        try {
+            $amdParams = [];
+            if (config('prospector.defaults.amd_enabled')) {
+                $amdParams = app(\App\Services\Prospector\AmdService::class)->getAmdParams();
+            }
+
+            $callSid = $this->conferenceService->dialContactIntoConference(
+                $conferenceName,
+                $contact,
+                $fromNumber,
+                $amdParams,
+            );
+
+            $call->update(['twilio_call_sid' => $callSid]);
+
+            Log::error('DEBUG: Contact dialed successfully', [
+                'call_id' => $call->id,
+                'contact_sid' => $callSid,
+                'conference' => $conferenceName,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('handleOutboundDial: failed to dial contact', [
+                'call_id' => $call->id,
+                'contact_id' => $contact->id,
+                'error' => $e->getMessage(),
+            ]);
+            $call->markFailed();
+        }
 
         // Broadcast ringing event to agent's browser
         broadcast(new \App\Events\Prospector\DialerCallRinging($call, $agent->id));
