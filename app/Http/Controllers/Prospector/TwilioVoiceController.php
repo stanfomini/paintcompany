@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Prospector;
 
 use App\Events\Prospector\InboundCallRinging;
 use App\Http\Controllers\Controller;
+use App\Jobs\Prospector\DialContactIntoConferenceJob;
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\Campaign;
@@ -229,33 +230,10 @@ class TwilioVoiceController extends Controller
             'twilio_conference_sid' => $conferenceName,
         ]);
 
-        // Dial the contact into the conference via Participants API.
-        // This runs synchronously — the TwiML response is sent after this completes.
-        // The agent's WebRTC connection is being established in parallel by Twilio
-        // while we make this API call, so the agent still connects first.
-        try {
-            $amdParams = [];
-            if (config('prospector.defaults.amd_enabled')) {
-                $amdService = app(\App\Services\Prospector\AmdService::class);
-                $amdParams = $amdService->getAmdParams();
-            }
-
-            $callSid = $this->conferenceService->dialContactIntoConference(
-                $conferenceName,
-                $contact,
-                $fromNumber,
-                $amdParams,
-            );
-
-            $call->update(['twilio_call_sid' => $callSid]);
-        } catch (\Exception $e) {
-            Log::error('handleOutboundDial: failed to dial contact', [
-                'call_id' => $call->id,
-                'contact_id' => $contact->id,
-                'error' => $e->getMessage(),
-            ]);
-            $call->markFailed();
-        }
+        // Dial the contact into the conference via a queued job.
+        // The TwiML response returns FIRST so the agent connects to the conference
+        // immediately. The job fires moments later to dial the contact's phone.
+        DialContactIntoConferenceJob::dispatch($conferenceName, $contact, $fromNumber, $call);
 
         // Broadcast ringing event to agent's browser
         broadcast(new \App\Events\Prospector\DialerCallRinging($call, $agent->id));
