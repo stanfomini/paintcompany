@@ -2,14 +2,14 @@
 
 namespace App\Services\Prospector;
 
+use App\Ai\Agents\CallAnalystAgent;
 use App\Events\Prospector\CallIntelligenceReady;
 use App\Jobs\Prospector\ProcessCallIntelligenceJob;
+use App\Models\Prospector\AiSetting;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\CallIntelligence;
 use App\Services\PythonBridgeService;
 use Illuminate\Support\Facades\Log;
-use Prism\Prism\Enums\Provider;
-use Prism\Prism\Facades\Prism;
 
 class CallIntelligenceService
 {
@@ -25,15 +25,22 @@ class CallIntelligenceService
         $transcription = $this->transcribe($call, $intelligence);
 
         if ($transcription) {
-            $analysis = $this->analyze($transcription, $call);
-            $intelligence->update(array_merge($analysis, [
-                'model_version' => 'claude-haiku-4-5-20251001',
-                'processed_at' => now(),
-            ]));
+            $settings = AiSetting::current();
+
+            if ($settings->isConfigured()) {
+                $analysis = $this->analyze($transcription, $call, $settings);
+                $intelligence->update(array_merge($analysis, [
+                    'model_version' => $settings->provider.'/'.$settings->model,
+                    'processed_at' => now(),
+                ]));
+            } else {
+                Log::warning('CallIntelligence: AI settings not configured, skipping analysis', [
+                    'call_id' => $call->id,
+                ]);
+                $intelligence->update(['processed_at' => now()]);
+            }
         } else {
-            $intelligence->update([
-                'processed_at' => now(),
-            ]);
+            $intelligence->update(['processed_at' => now()]);
         }
 
         $intelligence->refresh();
@@ -98,27 +105,32 @@ class CallIntelligenceService
     }
 
     /**
-     * Analyze the transcription using Claude AI.
+     * Analyze the transcription using Laravel AI SDK agent.
      *
      * @return array<string, mixed>
      */
-    public function analyze(string $transcription, Call $call): array
+    public function analyze(string $transcription, Call $call, ?AiSetting $settings = null): array
     {
-        $prompt = $this->getAnalysisPrompt($transcription, $call);
+        $settings ??= AiSetting::current();
+
+        if (! $settings->isConfigured()) {
+            return [];
+        }
+
+        // Inject DB credentials into the provider config at runtime
+        config(["ai.providers.{$settings->provider}.key" => $settings->api_key]);
 
         try {
-            $response = Prism::text()
-                ->using(Provider::Anthropic, 'claude-haiku-4-5-20251001')
-                ->withSystemPrompt('You are a sales call analyst for a painting company. Respond ONLY with valid JSON, no other text.')
-                ->withPrompt($prompt)
-                ->asText();
+            $agent = new CallAnalystAgent($call);
+            $prompt = $agent->buildPrompt($transcription);
 
-            $parsed = json_decode($response->text, true);
+            $response = $agent->prompt($prompt, provider: $settings->provider, model: $settings->model);
+
+            $parsed = $response->structured;
 
             if (! is_array($parsed)) {
-                Log::warning('CallIntelligence: AI response was not valid JSON', [
+                Log::warning('CallIntelligence: AI response was not valid structured data', [
                     'call_id' => $call->id,
-                    'response' => $response->text,
                 ]);
 
                 return [];
@@ -139,60 +151,13 @@ class CallIntelligenceService
         } catch (\Exception $e) {
             Log::error('CallIntelligence: AI analysis failed', [
                 'call_id' => $call->id,
+                'provider' => $settings->provider,
+                'model' => $settings->model,
                 'error' => $e->getMessage(),
             ]);
 
             return [];
         }
-    }
-
-    /**
-     * Build the analysis prompt with call context.
-     */
-    public function getAnalysisPrompt(string $transcription, Call $call): string
-    {
-        $call->loadMissing(['agent.user', 'contact', 'company']);
-
-        $agentName = $call->agent?->user?->name ?? 'Unknown Agent';
-        $contactName = $call->contact
-            ? $call->contact->getFullName()
-            : 'Unknown Contact';
-        $companyName = $call->company?->name ?? 'Unknown Company';
-        $disposition = $call->disposition ?? 'none';
-
-        return <<<PROMPT
-        Analyze this sales call transcription from a painting company.
-
-        Context:
-        - Agent: {$agentName}
-        - Contact: {$contactName}
-        - Company: {$companyName}
-        - Disposition: {$disposition}
-
-        Transcription:
-        {$transcription}
-
-        Return a JSON object with these fields:
-        {
-            "sentiment_overall": <float between -1.0 and 1.0, where -1 is very negative and 1 is very positive>,
-            "sentiment_by_segment": [{"segment": <index>, "sentiment": <float -1 to 1>}],
-            "lead_score": <integer 0-100, where 0 is cold and 100 is hot>,
-            "scoring_factors": [{"factor": "<description>", "weight": <integer points>}],
-            "keywords": ["<relevant keyword>", ...],
-            "objections": ["<objection raised by contact>", ...],
-            "action_items": ["<follow-up action>", ...],
-            "summary": "<2-3 sentence summary of the call>",
-            "coaching_notes": "<1-2 suggestions for the agent to improve>",
-            "speaker_labels": {"speaker_1": "<role>", "speaker_2": "<role>"}
-        }
-
-        Scoring guidelines:
-        - 0-30 (cold): No interest, wrong number, do-not-call, hang up
-        - 31-60 (warm): Some interest, needs follow-up, asked questions, wants quote
-        - 61-100 (hot): Strong interest, ready to schedule, accepted estimate, referred others
-
-        Respond ONLY with the JSON object.
-        PROMPT;
     }
 
     /**
