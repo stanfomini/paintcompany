@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Prospector\AiSetting;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\MessagingService;
 use App\Models\Prospector\TwilioAccount;
@@ -49,6 +50,22 @@ class extends Component
     public ?int $serviceAccountId = null;
     public ?int $serviceCompanyId = null;
 
+    // AI Intelligence
+    public string $aiProvider = 'xai';
+    public string $aiModel = 'grok-3-mini-fast';
+    public string $aiApiKey = '';
+    public bool $aiEnabled = false;
+    public ?array $aiTestResult = null;
+
+    public function mount(): void
+    {
+        $ai = AiSetting::current();
+        $this->aiProvider = $ai->provider;
+        $this->aiModel = $ai->model;
+        $this->aiApiKey = '';
+        $this->aiEnabled = $ai->enabled;
+    }
+
     public function boot(): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -83,6 +100,83 @@ class extends Component
     public function companies(): \Illuminate\Support\Collection
     {
         return Company::where('is_active', true)->orderBy('name')->get();
+    }
+
+    #[Computed]
+    public function aiSettings(): AiSetting
+    {
+        return AiSetting::current();
+    }
+
+    public function saveAiSettings(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $this->validate([
+            'aiProvider' => ['required', 'string', 'in:' . implode(',', array_keys(AiSetting::providerOptions()))],
+            'aiModel' => ['required', 'string', 'max:100'],
+        ]);
+
+        $ai = AiSetting::current();
+
+        $data = [
+            'provider' => $this->aiProvider,
+            'model' => $this->aiModel,
+            'enabled' => $this->aiEnabled,
+        ];
+
+        if (! empty($this->aiApiKey)) {
+            $data['api_key'] = $this->aiApiKey;
+        }
+
+        $ai->update($data);
+        $this->aiApiKey = '';
+        unset($this->aiSettings);
+    }
+
+    public function testAiConnection(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $ai = AiSetting::current();
+
+        if (! $ai->api_key) {
+            $this->aiTestResult = ['success' => false, 'error' => 'No API key configured.'];
+
+            return;
+        }
+
+        try {
+            config(["ai.providers.{$ai->provider}.key" => $ai->api_key]);
+
+            $response = \Laravel\Ai\Facades\Ai::text(
+                provider: $ai->provider,
+                model: $ai->model,
+                prompt: 'Reply with exactly: OK',
+                maxTokens: 10,
+            );
+
+            $this->aiTestResult = [
+                'success' => true,
+                'provider' => $ai->provider,
+                'model' => $ai->model,
+                'response' => substr((string) $response, 0, 50),
+            ];
+        } catch (\Exception $e) {
+            $this->aiTestResult = [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    public function dismissAiTestResult(): void
+    {
+        $this->aiTestResult = null;
     }
 
     public function openCreateServiceModal(): void
@@ -410,6 +504,16 @@ class extends Component
         >
             {{ __('Webhook URLs') }}
         </button>
+        <button
+            wire:click="$set('activeTab', 'ai')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'ai',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'ai',
+            ])
+        >
+            {{ __('AI Intelligence') }}
+        </button>
     </div>
 
     {{-- ===================== Twilio Accounts Tab ===================== --}}
@@ -698,6 +802,82 @@ class extends Component
                 <flux:badge size="sm" color="purple">{{ __('Status') }}</flux:badge>
                 <code class="text-xs text-zinc-600 dark:text-zinc-300 break-all">{{ $this->webhookUrls['statusCallback'] }}</code>
                 <flux:badge size="sm" color="zinc">{{ $this->webhookUrls['statusCallbackMethod'] }}</flux:badge>
+            </div>
+        </div>
+    @endif
+
+    {{-- ===================== AI Intelligence Tab ===================== --}}
+    @if ($activeTab === 'ai')
+        @if ($aiTestResult)
+            <div class="mb-4">
+                @if ($aiTestResult['success'] ?? false)
+                    <flux:callout color="green" icon="check-circle">
+                        <flux:callout.heading>{{ __('Connection Successful') }}</flux:callout.heading>
+                        <flux:callout.text>
+                            {{ __('Connected to :provider (:model)', [
+                                'provider' => $aiTestResult['provider'] ?? '',
+                                'model' => $aiTestResult['model'] ?? '',
+                            ]) }}
+                        </flux:callout.text>
+                    </flux:callout>
+                @else
+                    <flux:callout color="red" icon="exclamation-triangle">
+                        <flux:callout.heading>{{ __('Connection Failed') }}</flux:callout.heading>
+                        <flux:callout.text>{{ $aiTestResult['error'] ?? __('Unknown error') }}</flux:callout.text>
+                    </flux:callout>
+                @endif
+                <div class="mt-2">
+                    <flux:button size="sm" variant="ghost" wire:click="dismissAiTestResult">{{ __('Dismiss') }}</flux:button>
+                </div>
+            </div>
+        @endif
+
+        <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
+            <flux:heading size="lg" class="mb-1">{{ __('AI Call Intelligence') }}</flux:heading>
+            <flux:text class="mb-6 text-sm">{{ __('Configure AI-powered analysis for call transcriptions. Calls are automatically analyzed when they complete.') }}</flux:text>
+
+            <div class="space-y-5">
+                <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                    <div>
+                        <flux:label>{{ __('Enable AI Analysis') }}</flux:label>
+                        <flux:text class="text-xs">{{ __('Automatically analyze completed calls with AI.') }}</flux:text>
+                    </div>
+                    <flux:switch wire:model.live="aiEnabled" />
+                </div>
+
+                <flux:select wire:model.live="aiProvider" :label="__('AI Provider')">
+                    @foreach (\App\Models\Prospector\AiSetting::providerOptions() as $value => $label)
+                        <flux:select.option value="{{ $value }}">{{ $label }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+
+                <flux:input wire:model="aiModel" :label="__('Model')" :placeholder="__('e.g., grok-3-mini-fast, claude-haiku-4-5-20251001')" />
+
+                <div>
+                    <flux:input wire:model="aiApiKey" type="password" :label="__('API Key')" :placeholder="__('Enter new API key...')" autocomplete="off" />
+                    @if ($this->aiSettings->api_key)
+                        <flux:text class="mt-1 text-xs">
+                            {{ __('Current key: :key', ['key' => $this->aiSettings->getMaskedKey()]) }}
+                        </flux:text>
+                    @endif
+                </div>
+
+                <div class="flex items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                    <flux:button variant="primary" wire:click="saveAiSettings" wire:loading.attr="disabled" wire:target="saveAiSettings">
+                        <span wire:loading.remove wire:target="saveAiSettings">{{ __('Save Settings') }}</span>
+                        <span wire:loading wire:target="saveAiSettings">{{ __('Saving...') }}</span>
+                    </flux:button>
+                    <flux:button variant="ghost" wire:click="testAiConnection" wire:loading.attr="disabled" wire:target="testAiConnection">
+                        <span wire:loading.remove wire:target="testAiConnection">{{ __('Test Connection') }}</span>
+                        <span wire:loading wire:target="testAiConnection">{{ __('Testing...') }}</span>
+                    </flux:button>
+
+                    @if ($this->aiSettings->isConfigured())
+                        <flux:badge size="sm" color="green">{{ __('Configured') }}</flux:badge>
+                    @else
+                        <flux:badge size="sm" color="zinc">{{ __('Not Configured') }}</flux:badge>
+                    @endif
+                </div>
             </div>
         </div>
     @endif
