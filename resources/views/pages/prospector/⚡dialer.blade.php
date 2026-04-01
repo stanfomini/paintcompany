@@ -1372,6 +1372,29 @@ class extends Component
         deviceReady: false,
         pendingInit: null,
 
+        wrapUpRemaining: 0,
+        wrapUpInterval: null,
+
+        startWrapUpTimer() {
+            this.cancelWrapUpTimer();
+            this.wrapUpRemaining = parseInt($wire.wrapUpSeconds) || 30;
+            this.wrapUpInterval = setInterval(() => {
+                this.wrapUpRemaining--;
+                if (this.wrapUpRemaining <= 0) {
+                    this.cancelWrapUpTimer();
+                    $wire.completeWrapUp();
+                }
+            }, 1000);
+        },
+
+        cancelWrapUpTimer() {
+            if (this.wrapUpInterval) {
+                clearInterval(this.wrapUpInterval);
+                this.wrapUpInterval = null;
+            }
+            this.wrapUpRemaining = 0;
+        },
+
         // Stage 4 UI state
         showDtmf: false,
         showManualDial: false,
@@ -1645,6 +1668,14 @@ class extends Component
                 }
             });
 
+            this.$wire.on('start-wrap-up-timer', () => {
+                this.startWrapUpTimer();
+            });
+
+            this.$wire.on('cancel-wrap-up-timer', () => {
+                this.cancelWrapUpTimer();
+            });
+
             // When dialContact detects the contact's company differs from the active
             // Voice SDK company, it dispatches this event to switch credentials first
             this.$wire.on('ensure-voice-company', async ({ companyId }) => {
@@ -1760,6 +1791,7 @@ class extends Component
 
         destroy() {
             this.stopTimer();
+            this.cancelWrapUpTimer();
             this.hangUp();
             if (this.syncInterval) {
                 clearInterval(this.syncInterval);
@@ -2167,6 +2199,15 @@ class extends Component
                                 <flux:icon name="{{ $autoAnswerInbound ? 'phone-arrow-down-left' : 'bell-alert' }}" class="size-3.5" />
                                 {{ $autoAnswerInbound ? 'Auto' : 'Ring' }}
                             </button>
+                            <select
+                                wire:change="setWrapUpSeconds($event.target.value)"
+                                class="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-xs text-zinc-600 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-400"
+                                title="Wrap-up time after calls"
+                            >
+                                @foreach ([15, 30, 45, 60, 90, 120] as $sec)
+                                    <option value="{{ $sec }}" {{ $wrapUpSeconds == $sec ? 'selected' : '' }}>{{ $sec }}s</option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -2375,6 +2416,20 @@ class extends Component
                                     />
                                     <flux:button type="submit" size="sm" variant="primary" icon="phone">Dial</flux:button>
                                 </form>
+                            </div>
+                        @endif
+
+                        {{-- Wrap-up countdown banner --}}
+                        @if ($agentStatus === 'wrap_up')
+                            <div class="mb-3 flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 dark:border-purple-700 dark:bg-purple-900/20">
+                                <div class="flex items-center gap-2">
+                                    <flux:icon name="clock" class="size-4 text-purple-500" />
+                                    <span class="text-sm font-medium text-purple-700 dark:text-purple-300">Wrap Up</span>
+                                    <span x-show="wrapUpRemaining > 0" class="font-mono text-sm font-bold text-purple-600 dark:text-purple-400" x-text="wrapUpRemaining + 's'"></span>
+                                </div>
+                                <flux:button size="xs" variant="primary" wire:click="completeWrapUp" x-on:click="cancelWrapUpTimer()">
+                                    Go Available
+                                </flux:button>
                             </div>
                         @endif
 
