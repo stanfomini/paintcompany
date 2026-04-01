@@ -387,15 +387,7 @@ class extends Component
             $label = 'Not Configured';
         }
 
-        $primaryNumber = $numbers->first()?->phone_number;
-
-        return [
-            'status' => $status,
-            'label' => $label,
-            'checks' => $checks,
-            'number' => $primaryNumber,
-            'company_name' => $company->name ?? null,
-        ];
+        return ['status' => $status, 'label' => $label, 'checks' => $checks];
     }
 
     // ──────────────────────────────────────
@@ -721,10 +713,11 @@ class extends Component
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
 
-        // Pre-switch the Voice SDK to the correct company during ringing phase
-        // (agent joins conference later when DialerCallConnected broadcast fires)
+        // Ensure the Voice SDK is connected to the correct company before joining
         $this->dispatch('ensure-voice-company', companyId: $company->id);
-        $this->dispatch('play-dial-ring');
+
+        // Dispatch the conference dial to Twilio (async — the browser will join via the Alpine event)
+        $this->dispatch('join-conference', conferenceName: $conferenceName);
 
         // Dial the contact into the conference via Twilio REST API
         try {
@@ -830,10 +823,9 @@ class extends Component
         $this->preCallStatus = $this->agentStatus;
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
-        // Pre-switch the Voice SDK to the correct company during ringing phase
-        // (agent joins conference later when DialerCallConnected broadcast fires)
+        $conferenceName = $call->twilio_conference_sid;
         $this->dispatch('ensure-voice-company', companyId: $call->company_id);
-        $this->dispatch('play-dial-ring');
+        $this->dispatch('join-conference', conferenceName: $conferenceName);
         $this->clearCaches();
     }
 
@@ -1483,24 +1475,6 @@ class extends Component
             this.wrapUpRemaining = 0;
         },
 
-        // Outbound ringing tone (plays in browser while contact's phone rings)
-        _dialRingAudio: null,
-
-        playDialRing() {
-            this.stopDialRing();
-            this._dialRingAudio = new Audio('/sounds/dialing.mp3');
-            this._dialRingAudio.loop = true;
-            this._dialRingAudio.volume = 0.4;
-            this._dialRingAudio.play().catch(() => {});
-        },
-
-        stopDialRing() {
-            if (this._dialRingAudio) {
-                this._dialRingAudio.pause();
-                this._dialRingAudio = null;
-            }
-        },
-
         // Stage 4 UI state
         showDtmf: false,
         showManualDial: false,
@@ -1712,7 +1686,6 @@ class extends Component
         },
 
         hangUp() {
-            this.stopDialRing();
             const conn = window.__twilio.connection;
             if (conn) {
                 conn.disconnect();
@@ -1749,7 +1722,6 @@ class extends Component
             });
 
             this.$wire.on('dial-error', ({ message }) => {
-                this.stopDialRing();
                 this.phoneError = 'Call failed: ' + message;
                 setTimeout(() => { this.phoneError = null; }, 10000);
             });
@@ -1792,22 +1764,14 @@ class extends Component
                 this.cancelWrapUpTimer();
             });
 
-            // Pre-switch Voice SDK to the correct company during ringing phase
+            // When dialContact detects the contact's company differs from the active
+            // Voice SDK company, it dispatches this event to switch credentials first
             this.$wire.on('ensure-voice-company', async ({ companyId }) => {
                 if (companyId && companyId !== window.__twilio.companyId) {
                     this.pendingInit = this.initTwilio(companyId);
                     await this.pendingInit;
                     this.pendingInit = null;
-                    // If switch failed, warn — call may connect on wrong account
-                    if (window.__twilio.companyId !== companyId) {
-                        this.phoneError = 'Failed to switch to the correct company phone — call may not have audio';
-                    }
                 }
-            });
-
-            // Play ringing tone in browser while contact's phone rings
-            this.$wire.on('play-dial-ring', () => {
-                this.playDialRing();
             });
 
             // Load initial queue
@@ -1848,19 +1812,16 @@ class extends Component
                         this.loadQueue();
                         $wire.onInboundCallRinging(e);
                     })
-                    .listen('.dialer.call.connected', async (e) => {
-                        this.stopDialRing();
+                    .listen('.dialer.call.connected', (e) => {
                         $wire.onCallConnected(e);
                         this.startTimer();
 
-                        // Auto-join the conference via WebRTC once contact answers
+                        // Auto-join the conference via WebRTC
                         if (e.conference_name) {
-                            if (this.pendingInit) await this.pendingInit;
-                            await this.connectToConference(e.conference_name);
+                            this.connectToConference(e.conference_name);
                         }
                     })
                     .listen('.dialer.call.ended', (e) => {
-                        this.stopDialRing();
                         this.stopTimer();
                         // Only disconnect WebRTC locally — server already ended the call
                         const conn = window.__twilio.connection;
@@ -2307,20 +2268,12 @@ class extends Component
                                 'amber' => 'bg-amber-500',
                                 default => 'bg-red-500',
                             } }}"></span>
-                            {{-- Company name + readiness label --}}
-                            @if ($readiness['company_name'] ?? null)
-                                <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ $readiness['company_name'] }}</span>
-                                <span class="text-zinc-300 dark:text-zinc-600">&middot;</span>
-                            @endif
+                            {{-- Company readiness label --}}
                             <span class="text-sm font-medium {{ match($readiness['status']) {
                                 'green' => 'text-green-700 dark:text-green-400',
                                 'amber' => 'text-amber-700 dark:text-amber-400',
                                 default => 'text-red-700 dark:text-red-400',
                             } }}">{{ $readiness['label'] }}</span>
-                            {{-- Active phone number --}}
-                            @if ($readiness['number'] ?? null)
-                                <span class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ $readiness['number'] }}</span>
-                            @endif
                             {{-- WebRTC connection indicator (secondary) --}}
                             <span class="inline-flex size-1.5 rounded-full" :class="deviceReady ? 'bg-green-400' : (phoneError ? 'bg-red-400' : 'bg-amber-400 animate-pulse')" title="WebRTC"></span>
                             {{-- Expand checklist --}}

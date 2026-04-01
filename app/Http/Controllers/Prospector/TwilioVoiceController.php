@@ -126,7 +126,6 @@ class TwilioVoiceController extends Controller
         $response = new VoiceResponse;
 
         if ($conferenceName) {
-            // Outbound: agent browser initiates call, join the specified conference
             $dial = $response->dial();
             $dial->conference($conferenceName, [
                 'startConferenceOnEnter' => true,
@@ -134,11 +133,8 @@ class TwilioVoiceController extends Controller
                 'beep' => false,
             ]);
         } elseif (str_starts_with($to, 'client:')) {
-            // Inbound via Participants API: Twilio is dialing the agent into a
-            // conference. Return empty TwiML to accept — the Participants API
-            // handles conference bridging internally. A <Dial><Client> here would
-            // create a separate call loop instead of joining the conference.
-            Log::info('TwiML handleIncoming: accepting Participants API client call', ['to' => $to]);
+            $dial = $response->dial();
+            $dial->client(substr($to, 7));
         } else {
             $response->say('No conference specified.');
             $response->hangup();
