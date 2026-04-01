@@ -114,31 +114,172 @@ class TwilioVoiceController extends Controller
     /**
      * POST /prospector/webhook/twilio/voice/incoming
      *
-     * TwiML endpoint called by Twilio when the Voice SDK initiates
-     * or receives a call. Returns TwiML that connects the caller
-     * to a conference room.
+     * TwiML endpoint called by Twilio when the Voice SDK initiates a call.
+     *
+     * For outbound calls: receives To (phone number) and contactId from device.connect() params.
+     * Creates the Call record, returns <Conference> TwiML to connect the agent,
+     * then dials the contact into the same conference via Participants API.
+     *
+     * For conference joins: receives a conference param and joins directly.
      */
     public function handleIncoming(Request $request): Response
     {
         $to = $request->input('To', '');
+        $from = $request->input('From', '');
         $conferenceName = $request->input('conference', '');
+        $contactId = $request->input('contactId');
 
-        $response = new VoiceResponse;
-
+        // Case 1: Direct conference join (transfers, supervisor, parallel dial)
         if ($conferenceName) {
+            $response = new VoiceResponse;
             $dial = $response->dial();
             $dial->conference($conferenceName, [
                 'startConferenceOnEnter' => true,
                 'endConferenceOnExit' => false,
                 'beep' => false,
             ]);
-        } elseif (str_starts_with($to, 'client:')) {
+
+            return $this->twimlResponse($response);
+        }
+
+        // Case 2: Outbound call initiated by agent via device.connect()
+        if ($contactId && str_starts_with($from, 'client:')) {
+            return $this->handleOutboundDial($request, $from, (int) $contactId);
+        }
+
+        // Case 3: Client-to-client (should not happen in normal flow)
+        if (str_starts_with($to, 'client:')) {
+            $response = new VoiceResponse;
             $dial = $response->dial();
             $dial->client(substr($to, 7));
-        } else {
-            $response->say('No conference specified.');
-            $response->hangup();
+
+            return $this->twimlResponse($response);
         }
+
+        // Fallback
+        $response = new VoiceResponse;
+        $response->say('No call parameters specified.');
+        $response->hangup();
+
+        return $this->twimlResponse($response);
+    }
+
+    /**
+     * Handle an outbound dial initiated by the agent's browser.
+     * Creates the Call record, puts the agent in a conference via TwiML,
+     * and dials the contact into the same conference via Participants API.
+     */
+    protected function handleOutboundDial(Request $request, string $fromIdentity, int $contactId): Response
+    {
+        // Parse agent from client identity (format: "client:agent-{id}")
+        $agentId = (int) str_replace('client:agent-', '', $fromIdentity);
+        $agent = Agent::find($agentId);
+
+        if (! $agent) {
+            Log::warning('handleOutboundDial: agent not found', ['identity' => $fromIdentity]);
+            $response = new VoiceResponse;
+            $response->say('Agent not found.');
+            $response->hangup();
+
+            return $this->twimlResponse($response);
+        }
+
+        $contact = Contact::with('company.twilioAccount')->find($contactId);
+
+        if (! $contact || ! $contact->company) {
+            Log::warning('handleOutboundDial: contact not found', ['contactId' => $contactId]);
+            $response = new VoiceResponse;
+            $response->say('Contact not found.');
+            $response->hangup();
+
+            return $this->twimlResponse($response);
+        }
+
+        $company = $contact->company;
+
+        // Select outbound phone number
+        $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
+
+        try {
+            $fromNumber = $numberService->selectNumber($company, $contact, null);
+        } catch (\RuntimeException $e) {
+            Log::error('handleOutboundDial: no number available', ['error' => $e->getMessage()]);
+            $response = new VoiceResponse;
+            $response->say('No phone number available for this company.');
+            $response->hangup();
+
+            return $this->twimlResponse($response);
+        }
+
+        $conferenceName = 'call-'.Str::ulid();
+
+        // Create Call record
+        $call = Call::create([
+            'ulid' => Str::ulid()->toBase32(),
+            'company_id' => $company->id,
+            'agent_id' => $agent->id,
+            'contact_id' => $contact->id,
+            'from_phone_number_id' => $fromNumber->id,
+            'from_number' => $fromNumber->getEffectiveCallerId(),
+            'to_number' => $contact->phone,
+            'direction' => 'outbound',
+            'status' => 'ringing',
+            'started_at' => now(),
+            'twilio_call_sid' => $request->input('CallSid'),
+            'twilio_conference_sid' => $conferenceName,
+        ]);
+
+        // Dial the contact into the conference via Participants API (async after TwiML response)
+        // We dispatch this AFTER returning TwiML so the agent connects first
+        defer(function () use ($conferenceName, $contact, $fromNumber, $call) {
+            try {
+                $amdParams = [];
+                if (config('prospector.defaults.amd_enabled')) {
+                    $amdService = app(\App\Services\Prospector\AmdService::class);
+                    $amdParams = $amdService->getAmdParams();
+                }
+
+                $callSid = $this->conferenceService->dialContactIntoConference(
+                    $conferenceName,
+                    $contact,
+                    $fromNumber,
+                    $amdParams,
+                );
+
+                $call->update(['twilio_call_sid' => $callSid]);
+            } catch (\Exception $e) {
+                Log::error('handleOutboundDial: failed to dial contact', [
+                    'call_id' => $call->id,
+                    'contact_id' => $contact->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $call->markFailed();
+            }
+        });
+
+        // Broadcast ringing event to agent's browser
+        broadcast(new \App\Events\Prospector\DialerCallRinging($call, $agent->id));
+
+        // Update agent status
+        app(\App\Services\Prospector\AgentStateService::class)->setStatus($agent, 'ringing');
+
+        Log::info('Outbound call initiated via webhook', [
+            'call_id' => $call->id,
+            'agent_id' => $agent->id,
+            'contact_id' => $contact->id,
+            'conference' => $conferenceName,
+            'from' => $fromNumber->getEffectiveCallerId(),
+            'to' => $contact->phone,
+        ]);
+
+        // Return TwiML: agent joins the conference FIRST
+        $response = new VoiceResponse;
+        $dial = $response->dial();
+        $dial->conference($conferenceName, [
+            'startConferenceOnEnter' => true,
+            'endConferenceOnExit' => true,
+            'beep' => false,
+        ]);
 
         return $this->twimlResponse($response);
     }
