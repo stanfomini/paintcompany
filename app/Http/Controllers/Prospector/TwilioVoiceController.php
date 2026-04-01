@@ -123,28 +123,19 @@ class TwilioVoiceController extends Controller
         $to = $request->input('To', '');
         $conferenceName = $request->input('conference', '');
 
-        Log::error('DEBUG handleIncoming called', [
-            'to' => $to,
-            'conference' => $conferenceName,
-            'all_params' => $request->all(),
-        ]);
-
         $response = new VoiceResponse;
 
         if ($conferenceName) {
-            Log::error('DEBUG handleIncoming: joining conference', ['conference' => $conferenceName]);
             $dial = $response->dial();
             $dial->conference($conferenceName, [
                 'startConferenceOnEnter' => true,
-                'endConferenceOnExit' => true,
+                'endConferenceOnExit' => false,
                 'beep' => false,
             ]);
         } elseif (str_starts_with($to, 'client:')) {
-            Log::error('DEBUG handleIncoming: dialing client', ['to' => $to]);
             $dial = $response->dial();
             $dial->client(substr($to, 7));
         } else {
-            Log::error('DEBUG handleIncoming: no conference, no client — hanging up');
             $response->say('No conference specified.');
             $response->hangup();
         }
@@ -285,7 +276,7 @@ class TwilioVoiceController extends Controller
     {
         // Find ALL available agents via the pivot table
         $agents = Agent::whereHas('companies', fn ($q) => $q->where('prospector_companies.id', $company->id))
-            ->whereIn('status', ['available', 'nearby'])
+            ->where('status', 'available')
             ->get();
 
         if ($agents->isEmpty()) {
@@ -298,17 +289,15 @@ class TwilioVoiceController extends Controller
         }
 
         $conferenceName = 'inbound-'.Str::ulid();
-        $primaryAgent = $agents->first();
 
         $call = Call::create([
             'company_id' => $company->id,
             'contact_id' => $contact->id,
-            'agent_id' => $primaryAgent->id,
+            'agent_id' => $agents->first()->id,
             'direction' => 'inbound',
             'from_number' => $fromNumber,
             'to_number' => $toNumber,
             'twilio_call_sid' => $callSid,
-            'twilio_conference_sid' => $conferenceName,
             'status' => 'ringing',
             'started_at' => now(),
         ]);
@@ -322,24 +311,10 @@ class TwilioVoiceController extends Controller
             agentIds: $agentIds,
         ));
 
-        // Dial the agent's WebRTC client into the conference via Twilio Participants API.
-        // This triggers device.on('incoming') on their browser, which auto-accepts.
-        try {
-            $this->conferenceService->dialAgentIntoConference($conferenceName, $primaryAgent);
-        } catch (\Exception $e) {
-            Log::warning('Failed to dial agent into inbound conference', [
-                'call_id' => $call->id,
-                'agent_id' => $primaryAgent->id,
-                'conference' => $conferenceName,
-                'error' => $e->getMessage(),
-            ]);
-            // Echo broadcast is already sent — agent can still join via browser fallback
-        }
-
-        Log::info('Inbound call routed to agent', [
+        Log::info('Inbound call routed to agents', [
             'call_id' => $call->id,
             'company_id' => $company->id,
-            'agent_id' => $primaryAgent->id,
+            'agent_ids' => $agentIds,
             'contact_id' => $contact->id,
             'conference' => $conferenceName,
         ]);

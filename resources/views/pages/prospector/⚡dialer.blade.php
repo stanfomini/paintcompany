@@ -44,7 +44,6 @@ class extends Component
     public string $callStatus = 'idle'; // idle, ringing, connected, ended
     public ?string $callingFrom = null;
     public ?string $amdResult = null;
-    public bool $inboundRinging = false;
 
     // Parallel dialer state
     public array $parallelLines = []; // [{call_id, contact_name, phone, status}]
@@ -61,10 +60,6 @@ class extends Component
 
     // UI
     public bool $isMuted = false;
-    public bool $autoAnswerInbound = false;
-    public ?string $preCallStatus = null;
-    public int $wrapUpSeconds = 30;
-    public ?int $activeVoiceCompanyId = null;
 
     // SMS
     public string $smsBody = '';
@@ -131,8 +126,6 @@ class extends Component
 
         $this->agentId = $agent->id;
         $this->agentStatus = $agent->status;
-        $this->autoAnswerInbound = ($agent->settings['auto_answer_inbound'] ?? false);
-        $this->wrapUpSeconds = ($agent->settings['wrap_up_seconds'] ?? 30);
 
         if ($agent->status === 'offline') {
             $agent->goAvailable();
@@ -315,79 +308,6 @@ class extends Component
             ->active()
             ->orderBy('sort_order')
             ->first();
-    }
-
-    #[Computed]
-    public function phoneReadiness(): array
-    {
-        $companyId = $this->filterCompanyId;
-
-        if (! $companyId) {
-            // Use the company the Voice SDK is actually connected to
-            $companyId = $this->activeVoiceCompanyId;
-        }
-
-        if (! $companyId && $this->agentId) {
-            $agent = Agent::find($this->agentId);
-            $companyId = $agent?->company_id;
-        }
-
-        if (! $companyId) {
-            return ['status' => 'amber', 'label' => 'Select a company', 'checks' => []];
-        }
-
-        $company = Company::with(['twilioAccount', 'phoneNumbers' => fn ($q) => $q->where('is_active', true)])
-            ->find($companyId);
-
-        if (! $company) {
-            return ['status' => 'red', 'label' => 'Company not found', 'checks' => []];
-        }
-
-        $account = $company->twilioAccount;
-        $numbers = $company->phoneNumbers;
-
-        $checks = [];
-
-        // Check 1: Twilio account exists and active
-        $accountOk = $account && $account->is_active;
-        $checks[] = ['name' => 'Twilio Account', 'ok' => $accountOk, 'detail' => $accountOk ? $account->name : 'No active account'];
-
-        // Check 2: Voice SDK credentials
-        $hasConfigCreds = config('prospector.twilio.api_key_sid') && config('prospector.twilio.api_key_secret');
-        $hasDbCreds = $account && $account->api_key_sid && $account->api_key_secret;
-        $credsOk = $hasDbCreds || $hasConfigCreds;
-        $checks[] = ['name' => 'Voice SDK Credentials', 'ok' => $credsOk, 'detail' => $credsOk ? 'API Key configured' : 'Missing API Key SID/Secret'];
-        $hasVoice = $accountOk && $credsOk;
-
-        // Check 3: TwiML App
-        $hasConfigTwiml = (bool) config('prospector.twilio.twiml_app_sid');
-        $hasDbTwiml = $account && $account->twiml_app_sid;
-        $twimlOk = $hasDbTwiml || $hasConfigTwiml;
-        $checks[] = ['name' => 'TwiML App', 'ok' => $twimlOk, 'detail' => $twimlOk ? 'Configured' : 'Missing TwiML App SID'];
-
-        // Check 4: Active phone number
-        $numberOk = $numbers->isNotEmpty();
-        $numberDetail = $numberOk ? $numbers->first()->phone_number : 'No active phone numbers';
-        $checks[] = ['name' => 'Phone Number', 'ok' => $numberOk, 'detail' => $numberDetail];
-
-        // Check 5: SMS capability
-        $smsNumber = $numbers->first(fn ($n) => ($n->capabilities['sms'] ?? false));
-        $hasSms = (bool) $smsNumber;
-        $checks[] = ['name' => 'SMS Capability', 'ok' => $hasSms, 'detail' => $hasSms ? 'SMS enabled' : 'No SMS-capable number — A2P pending'];
-
-        // Determine traffic light
-        if ($hasVoice && $numberOk && $twimlOk && $hasSms) {
-            $status = 'green';
-            $label = 'Phone Ready';
-        } elseif ($hasVoice && $numberOk) {
-            $status = 'amber';
-            $label = 'Voice Only';
-        } else {
-            $status = 'red';
-            $label = 'Not Configured';
-        }
-
-        return ['status' => $status, 'label' => $label, 'checks' => $checks];
     }
 
     // ──────────────────────────────────────
@@ -709,7 +629,6 @@ class extends Component
 
         // Set active call state
         $this->setActiveCallFromCall($call->load('contact'));
-        $this->preCallStatus = $this->agentStatus;
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
 
@@ -768,35 +687,12 @@ class extends Component
             return;
         }
         $agent = Agent::findOrFail($this->agentId);
-        $validStatuses = ['available', 'nearby', 'break', 'offline'];
+        $validStatuses = ['available', 'break', 'offline'];
         if (! in_array($status, $validStatuses)) {
             return;
         }
         app(AgentStateService::class)->setStatus($agent, $status);
         $this->agentStatus = $status;
-    }
-
-    public function toggleAutoAnswer(): void
-    {
-        if (! $this->agentId) {
-            return;
-        }
-        $this->autoAnswerInbound = ! $this->autoAnswerInbound;
-        $agent = Agent::findOrFail($this->agentId);
-        $settings = $agent->settings ?? [];
-        $settings['auto_answer_inbound'] = $this->autoAnswerInbound;
-        $agent->update(['settings' => $settings]);
-    }
-
-    public function answerInbound(): void
-    {
-        $this->dispatch('answer-inbound-call');
-    }
-
-    public function declineInbound(): void
-    {
-        $this->dispatch('decline-inbound-call');
-        $this->resetCallState();
     }
 
     // ──────────────────────────────────────
@@ -810,7 +706,7 @@ class extends Component
         }
         $agent = Agent::findOrFail($this->agentId);
         $service = app(PowerDialerService::class);
-        $call = $service->dialForAgent($agent, $this->filterCompanyId);
+        $call = $service->dialForAgent($agent);
 
         if (! $call) {
             $this->dispatch('dial-error', message: 'No contacts available in queue');
@@ -820,7 +716,6 @@ class extends Component
 
         $call->load('contact');
         $this->setActiveCallFromCall($call);
-        $this->preCallStatus = $this->agentStatus;
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
         $conferenceName = $call->twilio_conference_sid;
@@ -944,40 +839,6 @@ class extends Component
         $this->callStatus = 'ended';
         $this->showDisposition = true;
         $this->agentStatus = 'wrap_up';
-
-        $agent = Agent::findOrFail($this->agentId);
-        app(AgentStateService::class)->setStatus($agent, 'wrap_up');
-
-        // Start client-side wrap-up countdown timer
-        $this->dispatch('start-wrap-up-timer');
-    }
-
-    public function completeWrapUp(): void
-    {
-        $returnStatus = in_array($this->preCallStatus, ['available', 'nearby']) ? $this->preCallStatus : 'available';
-        $this->preCallStatus = null;
-        $this->agentStatus = $returnStatus;
-
-        if ($this->agentId) {
-            $agent = Agent::findOrFail($this->agentId);
-            app(AgentStateService::class)->setStatus($agent, $returnStatus);
-        }
-    }
-
-    public function setWrapUpSeconds(int $seconds): void
-    {
-        $allowed = [15, 30, 45, 60, 90, 120];
-        if (! in_array($seconds, $allowed)) {
-            return;
-        }
-        $this->wrapUpSeconds = $seconds;
-
-        if ($this->agentId) {
-            $agent = Agent::findOrFail($this->agentId);
-            $settings = $agent->settings ?? [];
-            $settings['wrap_up_seconds'] = $seconds;
-            $agent->update(['settings' => $settings]);
-        }
     }
 
     public function submitDisposition(string $disposition, ?string $callbackAt = null): void
@@ -1002,15 +863,17 @@ class extends Component
         }
 
         $this->resetCallState();
+        $this->agentStatus = 'wrap_up';
         $this->dispositionNotes = '';
         $this->callbackDate = null;
         $this->parallelLines = [];
         $this->connectedLineIndex = null;
-
-        // Cancel wrap-up timer and transition to available/nearby immediately
-        $this->dispatch('cancel-wrap-up-timer');
-        $this->completeWrapUp();
         $this->clearCaches();
+
+        // Auto-advance to next contact if agent is active
+        if ($this->agentStatus !== 'offline') {
+            $this->dialNext();
+        }
     }
 
     // ──────────────────────────────────────
@@ -1266,12 +1129,6 @@ class extends Component
         $this->callStatus = 'connected';
         $this->amdResult = $data['amd_result'] ?? null;
         $this->agentStatus = 'on_call';
-        $this->inboundRinging = false;
-
-        if ($this->agentId) {
-            $agent = Agent::findOrFail($this->agentId);
-            app(AgentStateService::class)->setStatus($agent, 'on_call');
-        }
 
         // In parallel mode, find and highlight the winning line
         if ($this->dialerMode === 'parallel') {
@@ -1305,14 +1162,6 @@ class extends Component
         $this->showDisposition = true;
         $this->supervisorName = null;
         $this->supervisorMode = null;
-        $this->agentStatus = 'wrap_up';
-
-        if ($this->agentId) {
-            $agent = Agent::findOrFail($this->agentId);
-            app(AgentStateService::class)->setStatus($agent, 'wrap_up');
-        }
-
-        $this->dispatch('start-wrap-up-timer');
         $this->clearCaches();
     }
 
@@ -1328,9 +1177,6 @@ class extends Component
         $this->activeContact = $data['contact'] ?? null;
         $this->callStatus = 'ringing';
         $this->callingFrom = $data['from_number'] ?? null;
-        $this->preCallStatus = $this->agentStatus;
-        $this->agentStatus = 'ringing';
-        $this->inboundRinging = true;
 
         if ($contactId = $data['contact']['id'] ?? null) {
             $this->previewContactId = $contactId;
@@ -1339,10 +1185,9 @@ class extends Component
 
         $this->clearCaches();
 
-        // The agent is dialed into the conference by the Participants API
-        // (triggers device.on('incoming') which handles auto/manual answer).
-        // No need to dispatch join-conference here — that would cause a
-        // duplicate connection and 53000 signaling errors.
+        if ($conferenceName = $data['conference_name'] ?? null) {
+            $this->dispatch('join-conference', conferenceName: $conferenceName);
+        }
     }
 
     public function updatedFilterCompanyId($value): void
@@ -1351,11 +1196,6 @@ class extends Component
             $this->filterCompanyId = null;
         }
         $this->clearCaches();
-    }
-
-    public function updatedActiveVoiceCompanyId(): void
-    {
-        unset($this->phoneReadiness);
     }
 
     // ──────────────────────────────────────
@@ -1368,7 +1208,6 @@ class extends Component
         $this->activeCallUlid = null;
         $this->activeContact = null;
         $this->callStatus = 'idle';
-        $this->inboundRinging = false;
         $this->callingFrom = null;
         $this->amdResult = null;
         $this->showDisposition = false;
@@ -1406,7 +1245,6 @@ class extends Component
             $this->pipelineStages,
             $this->rvmTemplates,
             $this->activeScript,
-            $this->phoneReadiness,
         );
     }
 
@@ -1439,7 +1277,7 @@ class extends Component
 
 {{-- Twilio SDK objects stored outside Alpine to avoid Proxy conflicts --}}
 <script>
-    window.__twilio = { device: null, connection: null, companyId: null, pendingCall: null };
+    window.__twilio = { device: null, connection: null, companyId: null };
 </script>
 
 <div
@@ -1451,29 +1289,6 @@ class extends Component
 
         deviceReady: false,
         pendingInit: null,
-
-        wrapUpRemaining: 0,
-        wrapUpInterval: null,
-
-        startWrapUpTimer() {
-            this.cancelWrapUpTimer();
-            this.wrapUpRemaining = parseInt($wire.wrapUpSeconds) || 30;
-            this.wrapUpInterval = setInterval(() => {
-                this.wrapUpRemaining--;
-                if (this.wrapUpRemaining <= 0) {
-                    this.cancelWrapUpTimer();
-                    $wire.completeWrapUp();
-                }
-            }, 1000);
-        },
-
-        cancelWrapUpTimer() {
-            if (this.wrapUpInterval) {
-                clearInterval(this.wrapUpInterval);
-                this.wrapUpInterval = null;
-            }
-            this.wrapUpRemaining = 0;
-        },
 
         // Stage 4 UI state
         showDtmf: false,
@@ -1530,7 +1345,14 @@ class extends Component
 
         async initTwilio(companyId = null) {
             try {
-                // Fetch token FIRST — don't destroy the old device until we know the new one works
+                // Destroy existing device if re-initializing for a different company
+                if (window.__twilio.device) {
+                    this.deviceReady = false;
+                    window.__twilio.device.destroy();
+                    window.__twilio.device = null;
+                    window.__twilio.connection = null;
+                }
+
                 const Device = await window.loadTwilioVoice();
                 const tokenUrl = companyId
                     ? '/prospector/voice/token?company_id=' + companyId
@@ -1540,16 +1362,7 @@ class extends Component
 
                 if (!res.ok || data.error) {
                     this.phoneError = data.error || 'Failed to get phone token';
-                    // Keep the old device working — don't destroy it
                     return;
-                }
-
-                // Token succeeded — NOW destroy the old device
-                if (window.__twilio.device) {
-                    this.deviceReady = false;
-                    window.__twilio.device.destroy();
-                    window.__twilio.device = null;
-                    window.__twilio.connection = null;
                 }
 
                 window.__twilio.companyId = data.company_id || null;
@@ -1557,67 +1370,18 @@ class extends Component
                 const device = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
                     edge: 'ashburn',
-                    sounds: {
-                        incoming: '/sounds/phone-ring.wav',
-                    },
                 });
 
                 device.on('registered', () => {
                     this.deviceReady = true;
                     this.phoneError = null;
-                    // Sync company to Livewire AFTER device is fully registered
-                    // (doing it earlier triggers a re-render that disrupts initialization)
-                    $wire.set('activeVoiceCompanyId', window.__twilio.companyId);
                 });
                 device.on('error', (err) => {
                     this.phoneError = err.message || 'Phone error';
                 });
-                device.on('tokenWillExpire', async () => {
-                    try {
-                        const refreshUrl = window.__twilio.companyId
-                            ? '/prospector/voice/token?company_id=' + window.__twilio.companyId
-                            : '/prospector/voice/token';
-                        const res = await fetch(refreshUrl);
-                        const data = await res.json();
-                        if (res.ok && data.token) {
-                            device.updateToken(data.token);
-                        }
-                    } catch (err) {
-                        this.phoneError = 'Token refresh failed';
-                    }
-                });
                 device.on('incoming', (call) => {
-                    if ($wire.autoAnswerInbound) {
-                        // Auto-answer: accept immediately
-                        call.accept();
-                        window.__twilio.connection = call;
-                        this.connectionDebug = 'Inbound connected';
-                    } else {
-                        // Manual answer: store pending call, play ring, wait for agent
-                        window.__twilio.pendingCall = call;
-                        this.connectionDebug = 'Inbound ringing — waiting for answer';
-                        try {
-                            this._ringAudio = new Audio('/sounds/phone-ring.wav');
-                            this._ringAudio.loop = true;
-                            this._ringAudio.volume = 0.8;
-                            this._ringAudio.play().catch(() => {});
-                        } catch (err) {}
-
-                        // If caller hangs up before agent answers
-                        call.on('cancel', () => {
-                            window.__twilio.pendingCall = null;
-                            this.connectionDebug = null;
-                            if (this._ringAudio) { this._ringAudio.pause(); this._ringAudio = null; }
-                        });
-                        return; // Don't set up connection listeners yet
-                    }
-                    call.on('disconnect', () => {
-                        window.__twilio.connection = null;
-                        this.connectionDebug = null;
-                    });
-                    call.on('error', (err) => {
-                        this.phoneError = 'Call error: ' + (err.message || err);
-                    });
+                    call.accept();
+                    window.__twilio.connection = call;
                 });
 
                 await device.register();
@@ -1724,44 +1488,6 @@ class extends Component
             this.$wire.on('dial-error', ({ message }) => {
                 this.phoneError = 'Call failed: ' + message;
                 setTimeout(() => { this.phoneError = null; }, 10000);
-            });
-
-            // Manual answer: agent clicks Answer for inbound call
-            this.$wire.on('answer-inbound-call', () => {
-                const pending = window.__twilio.pendingCall;
-                if (pending) {
-                    pending.accept();
-                    window.__twilio.connection = pending;
-                    window.__twilio.pendingCall = null;
-                    this.connectionDebug = 'Inbound connected';
-                    if (this._ringAudio) { this._ringAudio.pause(); this._ringAudio = null; }
-                    pending.on('disconnect', () => {
-                        window.__twilio.connection = null;
-                        this.connectionDebug = null;
-                    });
-                    pending.on('error', (err) => {
-                        this.phoneError = 'Call error: ' + (err.message || err);
-                    });
-                }
-            });
-
-            // Manual decline: agent clicks Decline for inbound call
-            this.$wire.on('decline-inbound-call', () => {
-                const pending = window.__twilio.pendingCall;
-                if (pending) {
-                    pending.reject();
-                    window.__twilio.pendingCall = null;
-                    this.connectionDebug = null;
-                    if (this._ringAudio) { this._ringAudio.pause(); this._ringAudio = null; }
-                }
-            });
-
-            this.$wire.on('start-wrap-up-timer', () => {
-                this.startWrapUpTimer();
-            });
-
-            this.$wire.on('cancel-wrap-up-timer', () => {
-                this.cancelWrapUpTimer();
             });
 
             // When dialContact detects the contact's company differs from the active
@@ -1879,7 +1605,6 @@ class extends Component
 
         destroy() {
             this.stopTimer();
-            this.cancelWrapUpTimer();
             this.hangUp();
             if (this.syncInterval) {
                 clearInterval(this.syncInterval);
@@ -2250,36 +1975,17 @@ class extends Component
             {{-- ──────────────────────────────────────────────────────── --}}
             <div class="space-y-4 lg:col-span-5">
 
-                {{-- Softphone Status Bar — purely Blade-driven, updates on every Livewire render --}}
-                @php $readiness = $this->phoneReadiness; @endphp
-                <div
-                    class="rounded-lg border bg-white dark:bg-zinc-800 {{ match($readiness['status']) {
-                        'green' => 'border-green-300 dark:border-green-700',
-                        'amber' => 'border-amber-300 dark:border-amber-700',
-                        default => 'border-red-300 dark:border-red-700',
-                    } }}"
-                    x-data="{ showChecks: false }"
+                {{-- Softphone Status Bar — always visible --}}
+                <div class="rounded-lg border bg-white dark:bg-zinc-800"
+                    :class="deviceReady ? 'border-green-300 dark:border-green-700' : (phoneError ? 'border-red-300 dark:border-red-700' : 'border-amber-300 dark:border-amber-700')"
                 >
                     <div class="flex items-center justify-between px-4 py-2.5">
                         <div class="flex items-center gap-2">
-                            {{-- Company readiness dot --}}
-                            <span class="inline-flex size-2.5 rounded-full {{ match($readiness['status']) {
-                                'green' => 'bg-green-500',
-                                'amber' => 'bg-amber-500',
-                                default => 'bg-red-500',
-                            } }}"></span>
-                            {{-- Company readiness label --}}
-                            <span class="text-sm font-medium {{ match($readiness['status']) {
-                                'green' => 'text-green-700 dark:text-green-400',
-                                'amber' => 'text-amber-700 dark:text-amber-400',
-                                default => 'text-red-700 dark:text-red-400',
-                            } }}">{{ $readiness['label'] }}</span>
-                            {{-- WebRTC connection indicator (secondary) --}}
-                            <span class="inline-flex size-1.5 rounded-full" :class="deviceReady ? 'bg-green-400' : (phoneError ? 'bg-red-400' : 'bg-amber-400 animate-pulse')" title="WebRTC"></span>
-                            {{-- Expand checklist --}}
-                            <button type="button" x-on:click="showChecks = !showChecks" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-                                <flux:icon name="chevron-down" class="size-3.5 transition-transform" ::class="showChecks ? 'rotate-180' : ''" />
-                            </button>
+                            <span class="inline-flex size-2.5 rounded-full" :class="deviceReady ? 'bg-green-500' : (phoneError ? 'bg-red-500' : 'bg-amber-500 animate-pulse')"></span>
+                            <span class="text-sm font-medium"
+                                :class="deviceReady ? 'text-green-700 dark:text-green-400' : (phoneError ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400')"
+                                x-text="deviceReady ? 'Phone Ready' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
+                            ></span>
                             <template x-if="phoneError">
                                 <span class="text-xs text-red-500 dark:text-red-400" x-text="phoneError"></span>
                             </template>
@@ -2297,44 +2003,6 @@ class extends Component
                             <template x-if="!deviceReady">
                                 <button type="button" x-on:click="initTwilio()" class="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400">Retry</button>
                             </template>
-                            <button
-                                type="button"
-                                wire:click="toggleAutoAnswer"
-                                class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition {{ $autoAnswerInbound ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400' }}"
-                                title="{{ $autoAnswerInbound ? 'Auto-answer ON — inbound calls connect automatically' : 'Auto-answer OFF — you must click Answer for inbound calls' }}"
-                            >
-                                <flux:icon name="{{ $autoAnswerInbound ? 'phone-arrow-down-left' : 'bell-alert' }}" class="size-3.5" />
-                                {{ $autoAnswerInbound ? 'Auto' : 'Ring' }}
-                            </button>
-                            <select
-                                wire:change="setWrapUpSeconds($event.target.value)"
-                                class="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-xs text-zinc-600 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-400"
-                                title="Wrap-up time after calls"
-                            >
-                                @foreach ([15, 30, 45, 60, 90, 120] as $sec)
-                                    <option value="{{ $sec }}" {{ $wrapUpSeconds == $sec ? 'selected' : '' }}>{{ $sec }}s</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                    {{-- Expandable capability checklist --}}
-                    <div x-show="showChecks" x-collapse class="border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-700">
-                        <div class="space-y-1.5">
-                            @foreach ($readiness['checks'] as $check)
-                                <div class="flex items-center gap-2 text-xs">
-                                    @if ($check['ok'])
-                                        <flux:icon name="check-circle" class="size-4 text-green-500" />
-                                    @else
-                                        <flux:icon name="x-circle" class="size-4 text-red-500" />
-                                    @endif
-                                    <span class="{{ $check['ok'] ? 'text-zinc-600 dark:text-zinc-400' : 'text-red-600 dark:text-red-400' }}">
-                                        {{ $check['name'] }} — {{ $check['detail'] }}
-                                    </span>
-                                    @if (! $check['ok'])
-                                        <a href="/prospector/settings" class="ml-auto text-blue-600 hover:underline dark:text-blue-400">Settings</a>
-                                    @endif
-                                </div>
-                            @endforeach
                         </div>
                     </div>
                 </div>
@@ -2373,32 +2041,19 @@ class extends Component
                         @if ($callStatus === 'ringing' && $dialerMode !== 'parallel')
                             {{-- Ringing state --}}
                             <div class="text-center">
-                                <div class="mx-auto mb-3 flex size-14 items-center justify-center rounded-full {{ $inboundRinging ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-amber-100 dark:bg-amber-900/30' }}">
-                                    <flux:icon name="{{ $inboundRinging ? 'phone-arrow-down-left' : 'phone' }}" class="size-7 animate-pulse {{ $inboundRinging ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400' }}" />
+                                <div class="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                                    <flux:icon name="phone" class="size-7 animate-pulse text-amber-600 dark:text-amber-400" />
                                 </div>
                                 <div class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ $activeContact['name'] ?? 'Unknown' }}</div>
                                 <div class="font-mono text-sm text-zinc-500">{{ $activeContact['phone'] ?? '' }}</div>
                                 <div class="mt-2">
-                                    @if ($inboundRinging)
-                                        <flux:badge color="blue">Incoming Call</flux:badge>
-                                    @else
-                                        <flux:badge color="amber">Ringing...</flux:badge>
-                                    @endif
+                                    <flux:badge color="amber">Ringing...</flux:badge>
                                 </div>
                                 <div class="mt-3 flex justify-center gap-2">
-                                    @if ($inboundRinging && ! $autoAnswerInbound)
-                                        <flux:button size="sm" variant="primary" icon="phone" wire:click="answerInbound" class="!bg-green-600 hover:!bg-green-700">
-                                            Answer
-                                        </flux:button>
-                                        <flux:button size="sm" variant="danger" icon="phone-x-mark" wire:click="declineInbound">
-                                            Decline
-                                        </flux:button>
-                                    @else
-                                        <flux:button size="sm" variant="danger" icon="phone-x-mark" x-on:click="hangUp()">
-                                            Hang Up
-                                        </flux:button>
-                                        <flux:button size="sm" variant="ghost" icon="forward" wire:click="skipContact">Skip</flux:button>
-                                    @endif
+                                    <flux:button size="sm" variant="danger" icon="phone-x-mark" x-on:click="hangUp()">
+                                        Hang Up
+                                    </flux:button>
+                                    <flux:button size="sm" variant="ghost" icon="forward" wire:click="skipContact">Skip</flux:button>
                                 </div>
                             </div>
                         @elseif ($callStatus === 'connected')
@@ -2543,20 +2198,6 @@ class extends Component
                                     />
                                     <flux:button type="submit" size="sm" variant="primary" icon="phone">Dial</flux:button>
                                 </form>
-                            </div>
-                        @endif
-
-                        {{-- Wrap-up countdown banner --}}
-                        @if ($agentStatus === 'wrap_up')
-                            <div class="mb-3 flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 dark:border-purple-700 dark:bg-purple-900/20">
-                                <div class="flex items-center gap-2">
-                                    <flux:icon name="clock" class="size-4 text-purple-500" />
-                                    <span class="text-sm font-medium text-purple-700 dark:text-purple-300">Wrap Up</span>
-                                    <span x-show="wrapUpRemaining > 0" class="font-mono text-sm font-bold text-purple-600 dark:text-purple-400" x-text="wrapUpRemaining + 's'"></span>
-                                </div>
-                                <flux:button size="xs" variant="primary" wire:click="completeWrapUp" x-on:click="cancelWrapUpTimer()">
-                                    Go Available
-                                </flux:button>
                             </div>
                         @endif
 
@@ -2885,10 +2526,6 @@ class extends Component
                     class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'available' ? 'bg-green-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
                     Available
                 </button>
-                <button wire:click="setAgentStatus('nearby')"
-                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'nearby' ? 'bg-yellow-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
-                    Nearby
-                </button>
                 <button wire:click="setAgentStatus('break')"
                     class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'break' ? 'bg-amber-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
                     Break
@@ -2899,15 +2536,7 @@ class extends Component
                 </button>
             </div>
             @if ($agentStatus === 'on_call')
-                <flux:badge color="blue" size="sm">On Call</flux:badge>
-            @elseif ($agentStatus === 'ringing')
-                <flux:badge color="amber" size="sm">Ringing</flux:badge>
-            @elseif ($agentStatus === 'wrap_up')
-                <flux:badge color="purple" size="sm">
-                    Wrap Up <span x-show="wrapUpRemaining > 0" class="ml-1 font-mono" x-text="wrapUpRemaining + 's'"></span>
-                </flux:badge>
-            @elseif ($agentStatus === 'nearby')
-                <flux:badge color="yellow" size="sm">Nearby</flux:badge>
+                <flux:badge color="red" size="sm">On Call</flux:badge>
             @endif
         </div>
 </div>
