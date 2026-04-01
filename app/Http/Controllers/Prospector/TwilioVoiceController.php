@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Prospector;
 
-use App\Events\Prospector\DialerCallRinging;
+use App\Events\Prospector\InboundCallRinging;
 use App\Http\Controllers\Controller;
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
@@ -196,16 +196,20 @@ class TwilioVoiceController extends Controller
             }
         }
 
-        // Check if company has IVR enabled
-        $settings = $company->settings ?? [];
-        $ivr = $settings['ivr'] ?? null;
+        // Check IVR config with business hours awareness
+        $ivrFlow = $company->getActiveIvrFlow();
 
-        if ($ivr && ($ivr['enabled'] ?? false)) {
-            return $this->ivrGreetingTwiml($ivr, $company->id, $contact->id, $callSid);
+        if ($ivrFlow) {
+            return $this->ivrGreetingTwiml($ivrFlow, $company->id, $contact->id, $callSid);
         }
 
-        // Direct routing — find available agent
-        return $this->routeToAgent($company, $contact, $fromNumber, $toNumber, $callSid);
+        // No IVR — check business hours for direct routing
+        if ($company->isBusinessHours()) {
+            return $this->routeToAgent($company, $contact, $fromNumber, $toNumber, $callSid);
+        }
+
+        // After hours, no IVR — voicemail
+        return $this->afterHoursVoicemailTwiml($company);
     }
 
     /**
@@ -230,28 +234,39 @@ class TwilioVoiceController extends Controller
             return $this->voicemailTwiml();
         }
 
-        $settings = $company->settings ?? [];
-        $ivr = $settings['ivr'] ?? [];
-        $options = $ivr['options'] ?? [];
+        // Get the active flow (business or after hours)
+        $flow = $company->getActiveIvrFlow();
+        if (! $flow) {
+            return $this->voicemailTwiml();
+        }
 
+        $options = $flow['options'] ?? [];
         $selectedOption = $options[$digits] ?? null;
 
         if (! $selectedOption) {
-            // Invalid digit — replay IVR
-            return $this->ivrGreetingTwiml($ivr, $company->id, $contact->id, $callSid);
+            return $this->ivrGreetingTwiml($flow, $company->id, $contact->id, $callSid);
         }
 
         $action = $selectedOption['action'] ?? 'voicemail';
 
-        if ($action === 'route_agent') {
-            $fromNumber = $request->input('From', $contact->phone);
-            $toNumber = $request->input('To', '');
-
-            return $this->routeToAgent($company, $contact, $fromNumber, $toNumber, $callSid);
-        }
-
-        // Default: voicemail
-        return $this->voicemailTwiml();
+        return match ($action) {
+            'route_agent' => $this->routeToAgent(
+                $company,
+                $contact,
+                $request->input('From', $contact->phone),
+                $request->input('To', ''),
+                $callSid,
+            ),
+            'play_info' => $this->playInfoTwiml(
+                $selectedOption['message'] ?? 'No information available.',
+                $flow,
+                $company->id,
+                $contact->id,
+                $callSid,
+            ),
+            'forward' => $this->forwardTwiml($selectedOption['forward_to'] ?? ''),
+            default => $this->voicemailTwiml(),
+        };
     }
 
     /**
@@ -259,11 +274,12 @@ class TwilioVoiceController extends Controller
      */
     protected function routeToAgent(Company $company, Contact $contact, string $fromNumber, string $toNumber, string $callSid): Response
     {
-        $agent = Agent::where('company_id', $company->id)
+        // Find ALL available agents via the pivot table
+        $agents = Agent::whereHas('companies', fn ($q) => $q->where('prospector_companies.id', $company->id))
             ->where('status', 'available')
-            ->first();
+            ->get();
 
-        if (! $agent) {
+        if ($agents->isEmpty()) {
             Log::info('No available agents for inbound call', [
                 'company_id' => $company->id,
                 'from' => $fromNumber,
@@ -277,7 +293,7 @@ class TwilioVoiceController extends Controller
         $call = Call::create([
             'company_id' => $company->id,
             'contact_id' => $contact->id,
-            'agent_id' => $agent->id,
+            'agent_id' => $agents->first()->id,
             'direction' => 'inbound',
             'from_number' => $fromNumber,
             'to_number' => $toNumber,
@@ -286,12 +302,19 @@ class TwilioVoiceController extends Controller
             'started_at' => now(),
         ]);
 
-        broadcast(new DialerCallRinging($call, $agent->id));
+        $agentIds = $agents->pluck('id')->all();
 
-        Log::info('Inbound call routed to agent', [
+        broadcast(new InboundCallRinging(
+            call: $call,
+            company: $company,
+            conferenceName: $conferenceName,
+            agentIds: $agentIds,
+        ));
+
+        Log::info('Inbound call routed to agents', [
             'call_id' => $call->id,
             'company_id' => $company->id,
-            'agent_id' => $agent->id,
+            'agent_ids' => $agentIds,
             'contact_id' => $contact->id,
             'conference' => $conferenceName,
         ]);
@@ -374,6 +397,72 @@ class TwilioVoiceController extends Controller
 
         // If no input, repeat once then go to voicemail
         $response->say('We did not receive any input. Goodbye.');
+        $response->hangup();
+
+        return $this->twimlResponse($response);
+    }
+
+    /**
+     * Generate TwiML that plays an info message then re-gathers IVR input.
+     */
+    protected function playInfoTwiml(string $message, array $flow, int $companyId, int $contactId, string $callSid): Response
+    {
+        $response = new VoiceResponse;
+        $response->say($message);
+
+        $ivrResponseUrl = route('prospector.webhook.twilio.voice.ivr-response', [
+            'company_id' => $companyId,
+            'contact_id' => $contactId,
+        ]);
+
+        $greeting = $flow['greeting'] ?? 'Please make a selection.';
+        $gather = $response->gather([
+            'input' => 'dtmf',
+            'numDigits' => 1,
+            'action' => $ivrResponseUrl,
+            'method' => 'POST',
+        ]);
+        $gather->say($greeting);
+
+        $response->say('We did not receive any input. Goodbye.');
+        $response->hangup();
+
+        return $this->twimlResponse($response);
+    }
+
+    /**
+     * Generate TwiML to forward the call to an external number.
+     */
+    protected function forwardTwiml(string $forwardTo): Response
+    {
+        $response = new VoiceResponse;
+
+        if (empty($forwardTo)) {
+            $response->say('Sorry, we could not connect your call. Goodbye.');
+            $response->hangup();
+
+            return $this->twimlResponse($response);
+        }
+
+        $response->say('Please hold while we transfer your call.');
+        $dial = $response->dial();
+        $dial->number($forwardTo);
+
+        return $this->twimlResponse($response);
+    }
+
+    /**
+     * Generate TwiML for after-hours voicemail with company name.
+     */
+    protected function afterHoursVoicemailTwiml(Company $company): Response
+    {
+        $response = new VoiceResponse;
+        $response->say("Thank you for calling {$company->name}. We are currently closed. Please leave a message after the beep and we will return your call.");
+        $response->record([
+            'maxLength' => 120,
+            'action' => route('prospector.webhook.twilio.voice.status'),
+        ]);
+        $response->say('We did not receive a recording. Goodbye.');
         $response->hangup();
 
         return $this->twimlResponse($response);
