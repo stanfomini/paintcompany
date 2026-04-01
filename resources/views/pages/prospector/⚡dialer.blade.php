@@ -2246,34 +2246,33 @@ class extends Component
             {{-- ──────────────────────────────────────────────────────── --}}
             <div class="space-y-4 lg:col-span-5">
 
-                {{-- Softphone Status Bar — company-aware traffic light --}}
+                {{-- Softphone Status Bar — purely Blade-driven, updates on every Livewire render --}}
                 @php $readiness = $this->phoneReadiness; @endphp
-                <div class="rounded-lg border bg-white dark:bg-zinc-800"
-                    :class="{
-                        'border-green-300 dark:border-green-700': deviceReady && '{{ $readiness['status'] }}' === 'green',
-                        'border-amber-300 dark:border-amber-700': (deviceReady && '{{ $readiness['status'] }}' === 'amber') || (!deviceReady && !phoneError),
-                        'border-red-300 dark:border-red-700': phoneError || '{{ $readiness['status'] }}' === 'red',
-                    }"
+                <div
+                    class="rounded-lg border bg-white dark:bg-zinc-800 {{ match($readiness['status']) {
+                        'green' => 'border-green-300 dark:border-green-700',
+                        'amber' => 'border-amber-300 dark:border-amber-700',
+                        default => 'border-red-300 dark:border-red-700',
+                    } }}"
                     x-data="{ showChecks: false }"
                 >
                     <div class="flex items-center justify-between px-4 py-2.5">
                         <div class="flex items-center gap-2">
-                            <span class="inline-flex size-2.5 rounded-full"
-                                :class="{
-                                    'bg-green-500': deviceReady && '{{ $readiness['status'] }}' === 'green',
-                                    'bg-amber-500': (deviceReady && '{{ $readiness['status'] }}' === 'amber') || (!deviceReady && !phoneError && '{{ $readiness['status'] }}' !== 'red'),
-                                    'bg-red-500': phoneError || '{{ $readiness['status'] }}' === 'red',
-                                    'animate-pulse': !deviceReady && !phoneError && '{{ $readiness['status'] }}' !== 'red',
-                                }"
-                            ></span>
-                            <span class="text-sm font-medium"
-                                :class="{
-                                    'text-green-700 dark:text-green-400': deviceReady && '{{ $readiness['status'] }}' === 'green',
-                                    'text-amber-700 dark:text-amber-400': (deviceReady && '{{ $readiness['status'] }}' === 'amber') || (!deviceReady && !phoneError),
-                                    'text-red-700 dark:text-red-400': phoneError || '{{ $readiness['status'] }}' === 'red',
-                                }"
-                                x-text="deviceReady ? '{{ $readiness['label'] }}' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
-                            ></span>
+                            {{-- Company readiness dot --}}
+                            <span class="inline-flex size-2.5 rounded-full {{ match($readiness['status']) {
+                                'green' => 'bg-green-500',
+                                'amber' => 'bg-amber-500',
+                                default => 'bg-red-500',
+                            } }}"></span>
+                            {{-- Company readiness label --}}
+                            <span class="text-sm font-medium {{ match($readiness['status']) {
+                                'green' => 'text-green-700 dark:text-green-400',
+                                'amber' => 'text-amber-700 dark:text-amber-400',
+                                default => 'text-red-700 dark:text-red-400',
+                            } }}">{{ $readiness['label'] }}</span>
+                            {{-- WebRTC connection indicator (secondary) --}}
+                            <span class="inline-flex size-1.5 rounded-full" :class="deviceReady ? 'bg-green-400' : (phoneError ? 'bg-red-400' : 'bg-amber-400 animate-pulse')" title="WebRTC"></span>
+                            {{-- Expand checklist --}}
                             <button type="button" x-on:click="showChecks = !showChecks" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
                                 <flux:icon name="chevron-down" class="size-3.5 transition-transform" ::class="showChecks ? 'rotate-180' : ''" />
                             </button>
