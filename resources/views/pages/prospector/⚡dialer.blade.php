@@ -316,6 +316,76 @@ class extends Component
             ->first();
     }
 
+    #[Computed]
+    public function phoneReadiness(): array
+    {
+        $companyId = $this->filterCompanyId;
+
+        if (! $companyId) {
+            if ($this->agentId) {
+                $agent = Agent::find($this->agentId);
+                $companyId = $agent?->company_id;
+            }
+        }
+
+        if (! $companyId) {
+            return ['status' => 'amber', 'label' => 'Select a company', 'checks' => []];
+        }
+
+        $company = Company::with(['twilioAccount', 'phoneNumbers' => fn ($q) => $q->where('is_active', true)])
+            ->find($companyId);
+
+        if (! $company) {
+            return ['status' => 'red', 'label' => 'Company not found', 'checks' => []];
+        }
+
+        $account = $company->twilioAccount;
+        $numbers = $company->phoneNumbers;
+
+        $checks = [];
+
+        // Check 1: Twilio account exists and active
+        $accountOk = $account && $account->is_active;
+        $checks[] = ['name' => 'Twilio Account', 'ok' => $accountOk, 'detail' => $accountOk ? $account->name : 'No active account'];
+
+        // Check 2: Voice SDK credentials
+        $hasConfigCreds = config('prospector.twilio.api_key_sid') && config('prospector.twilio.api_key_secret');
+        $hasDbCreds = $account && $account->api_key_sid && $account->api_key_secret;
+        $credsOk = $hasDbCreds || $hasConfigCreds;
+        $checks[] = ['name' => 'Voice SDK Credentials', 'ok' => $credsOk, 'detail' => $credsOk ? 'API Key configured' : 'Missing API Key SID/Secret'];
+        $hasVoice = $accountOk && $credsOk;
+
+        // Check 3: TwiML App
+        $hasConfigTwiml = (bool) config('prospector.twilio.twiml_app_sid');
+        $hasDbTwiml = $account && $account->twiml_app_sid;
+        $twimlOk = $hasDbTwiml || $hasConfigTwiml;
+        $checks[] = ['name' => 'TwiML App', 'ok' => $twimlOk, 'detail' => $twimlOk ? 'Configured' : 'Missing TwiML App SID'];
+
+        // Check 4: Active phone number
+        $numberOk = $numbers->isNotEmpty();
+        $numberDetail = $numberOk ? $numbers->first()->phone_number : 'No active phone numbers';
+        $checks[] = ['name' => 'Phone Number', 'ok' => $numberOk, 'detail' => $numberDetail];
+
+        // Check 5: SMS capability
+        $smsNumber = $numbers->first(fn ($n) => ($n->capabilities['sms'] ?? false));
+        $hasSms = (bool) $smsNumber;
+        $checks[] = ['name' => 'SMS Capability', 'ok' => $hasSms, 'detail' => $hasSms ? 'SMS enabled' : 'No SMS-capable number — A2P pending'];
+
+        // Determine traffic light
+        if ($hasVoice && $numberOk && $twimlOk && $hasSms) {
+            $status = 'green';
+            $label = 'Phone Ready';
+        } elseif ($hasVoice && $numberOk) {
+            $status = 'amber';
+            $label = 'Voice Only';
+        } else {
+            $status = 'red';
+            $label = 'Not Configured';
+        }
+
+        return ['status' => $status, 'label' => $label, 'checks' => $checks];
+    }
+
     // ──────────────────────────────────────
     // Queue & Preview
     // ──────────────────────────────────────
@@ -1327,6 +1397,7 @@ class extends Component
             $this->pipelineStages,
             $this->rvmTemplates,
             $this->activeScript,
+            $this->phoneReadiness,
         );
     }
 
@@ -2162,17 +2233,37 @@ class extends Component
             {{-- ──────────────────────────────────────────────────────── --}}
             <div class="space-y-4 lg:col-span-5">
 
-                {{-- Softphone Status Bar — always visible --}}
+                {{-- Softphone Status Bar — company-aware traffic light --}}
+                @php $readiness = $this->phoneReadiness; @endphp
                 <div class="rounded-lg border bg-white dark:bg-zinc-800"
-                    :class="deviceReady ? 'border-green-300 dark:border-green-700' : (phoneError ? 'border-red-300 dark:border-red-700' : 'border-amber-300 dark:border-amber-700')"
+                    :class="{
+                        'border-green-300 dark:border-green-700': deviceReady && '{{ $readiness['status'] }}' === 'green',
+                        'border-amber-300 dark:border-amber-700': (deviceReady && '{{ $readiness['status'] }}' === 'amber') || (!deviceReady && !phoneError),
+                        'border-red-300 dark:border-red-700': phoneError || '{{ $readiness['status'] }}' === 'red',
+                    }"
+                    x-data="{ showChecks: false }"
                 >
                     <div class="flex items-center justify-between px-4 py-2.5">
                         <div class="flex items-center gap-2">
-                            <span class="inline-flex size-2.5 rounded-full" :class="deviceReady ? 'bg-green-500' : (phoneError ? 'bg-red-500' : 'bg-amber-500 animate-pulse')"></span>
-                            <span class="text-sm font-medium"
-                                :class="deviceReady ? 'text-green-700 dark:text-green-400' : (phoneError ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400')"
-                                x-text="deviceReady ? 'Phone Ready' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
+                            <span class="inline-flex size-2.5 rounded-full"
+                                :class="{
+                                    'bg-green-500': deviceReady && '{{ $readiness['status'] }}' === 'green',
+                                    'bg-amber-500': (deviceReady && '{{ $readiness['status'] }}' === 'amber') || (!deviceReady && !phoneError && '{{ $readiness['status'] }}' !== 'red'),
+                                    'bg-red-500': phoneError || '{{ $readiness['status'] }}' === 'red',
+                                    'animate-pulse': !deviceReady && !phoneError && '{{ $readiness['status'] }}' !== 'red',
+                                }"
                             ></span>
+                            <span class="text-sm font-medium"
+                                :class="{
+                                    'text-green-700 dark:text-green-400': deviceReady && '{{ $readiness['status'] }}' === 'green',
+                                    'text-amber-700 dark:text-amber-400': (deviceReady && '{{ $readiness['status'] }}' === 'amber') || (!deviceReady && !phoneError),
+                                    'text-red-700 dark:text-red-400': phoneError || '{{ $readiness['status'] }}' === 'red',
+                                }"
+                                x-text="deviceReady ? '{{ $readiness['label'] }}' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
+                            ></span>
+                            <button type="button" x-on:click="showChecks = !showChecks" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                                <flux:icon name="chevron-down" class="size-3.5 transition-transform" ::class="showChecks ? 'rotate-180' : ''" />
+                            </button>
                             <template x-if="phoneError">
                                 <span class="text-xs text-red-500 dark:text-red-400" x-text="phoneError"></span>
                             </template>
@@ -2208,6 +2299,26 @@ class extends Component
                                     <option value="{{ $sec }}" {{ $wrapUpSeconds == $sec ? 'selected' : '' }}>{{ $sec }}s</option>
                                 @endforeach
                             </select>
+                        </div>
+                    </div>
+                    {{-- Expandable capability checklist --}}
+                    <div x-show="showChecks" x-collapse class="border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-700">
+                        <div class="space-y-1.5">
+                            @foreach ($readiness['checks'] as $check)
+                                <div class="flex items-center gap-2 text-xs">
+                                    @if ($check['ok'])
+                                        <flux:icon name="check-circle" class="size-4 text-green-500" />
+                                    @else
+                                        <flux:icon name="x-circle" class="size-4 text-red-500" />
+                                    @endif
+                                    <span class="{{ $check['ok'] ? 'text-zinc-600 dark:text-zinc-400' : 'text-red-600 dark:text-red-400' }}">
+                                        {{ $check['name'] }} — {{ $check['detail'] }}
+                                    </span>
+                                    @if (! $check['ok'])
+                                        <a href="/prospector/settings" class="ml-auto text-blue-600 hover:underline dark:text-blue-400">Settings</a>
+                                    @endif
+                                </div>
+                            @endforeach
                         </div>
                     </div>
                 </div>
