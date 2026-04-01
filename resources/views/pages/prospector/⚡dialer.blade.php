@@ -709,6 +709,8 @@ class extends Component
         $call = $service->dialForAgent($agent);
 
         if (! $call) {
+            $this->dispatch('dial-error', message: 'No contacts available in queue');
+
             return;
         }
 
@@ -717,6 +719,7 @@ class extends Component
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
         $conferenceName = $call->twilio_conference_sid;
+        $this->dispatch('ensure-voice-company', companyId: $call->company_id);
         $this->dispatch('join-conference', conferenceName: $conferenceName);
         $this->clearCaches();
     }
@@ -1130,6 +1133,33 @@ class extends Component
         $this->supervisorMode = $data['mode'] ?? 'listen';
     }
 
+    public function onInboundCallRinging(array $data): void
+    {
+        $this->activeCallId = $data['call_id'] ?? null;
+        $this->activeContact = $data['contact'] ?? null;
+        $this->callStatus = 'ringing';
+        $this->callingFrom = $data['from_number'] ?? null;
+
+        if ($contactId = $data['contact']['id'] ?? null) {
+            $this->previewContactId = $contactId;
+            $this->loadContactState($contactId);
+        }
+
+        $this->clearCaches();
+
+        if ($conferenceName = $data['conference_name'] ?? null) {
+            $this->dispatch('join-conference', conferenceName: $conferenceName);
+        }
+    }
+
+    public function updatedFilterCompanyId($value): void
+    {
+        if ($value === '' || $value === '0') {
+            $this->filterCompanyId = null;
+        }
+        $this->clearCaches();
+    }
+
     // ──────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────
@@ -1441,6 +1471,23 @@ class extends Component
                     .listen('.dialer.call.ringing', (e) => {
                         $wire.onCallRinging(e);
                     })
+                    .listen('.inbound.call.ringing', (e) => {
+                        try {
+                            const audio = new Audio('/sounds/new-lead.wav');
+                            audio.volume = 0.8;
+                            audio.play().catch(() => {});
+                        } catch (err) {}
+
+                        if ('Notification' in window && Notification.permission === 'granted') {
+                            new Notification('Inbound Call!', {
+                                body: e.contact.name + ' - ' + e.company_name + '\n' + e.from_number,
+                                icon: '/favicon.ico',
+                            });
+                        }
+
+                        this.loadQueue();
+                        $wire.onInboundCallRinging(e);
+                    })
                     .listen('.dialer.call.connected', (e) => {
                         $wire.onCallConnected(e);
                         this.startTimer();
@@ -1529,7 +1576,8 @@ class extends Component
     {{-- ════════════════════════════════════════════════════════════════════ --}}
         <div class="mb-4 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
             <div class="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                <flux:select wire:model.live="filterCompanyId" size="sm" placeholder="All Companies" class="w-40">
+                <flux:select wire:model.live="filterCompanyId" size="sm" class="w-40">
+                    <flux:select.option value="">{{ __('All Companies') }}</flux:select.option>
                     @foreach ($this->assignedCompanies as $company)
                         <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
                     @endforeach
@@ -1611,7 +1659,15 @@ class extends Component
                             <div class="flex items-center gap-2 text-xs text-zinc-500">
                                 <span x-text="contact.phone"></span>
                                 <span>&middot;</span>
-                                <span x-text="contact.company_name"></span>
+                                <template x-if="!$wire.filterCompanyId">
+                                    <span class="inline-flex items-center gap-1">
+                                        <span class="inline-block h-2 w-2 rounded-full" :style="'background-color: ' + (contact.company_color || '#6B7280')"></span>
+                                        <span x-text="contact.company_name"></span>
+                                    </span>
+                                </template>
+                                <template x-if="$wire.filterCompanyId">
+                                    <span x-text="contact.company_name"></span>
+                                </template>
                             </div>
                         </div>
 
