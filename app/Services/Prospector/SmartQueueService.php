@@ -95,9 +95,9 @@ class SmartQueueService
     /**
      * Get the next contact for an agent (highest priority unclaimed contact).
      */
-    public function getNext(Agent $agent): ?Contact
+    public function getNext(Agent $agent, ?int $companyId = null): ?Contact
     {
-        return $this->getQueue($agent, limit: 1)->first();
+        return $this->getQueue($agent, companyId: $companyId, limit: 1)->first();
     }
 
     /**

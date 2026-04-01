@@ -244,10 +244,10 @@ class PowerDialerService
      * Uses SmartQueueService for next contact and atomic claiming.
      * This is the session-free alternative to dialNext().
      */
-    public function dialForAgent(Agent $agent): ?Call
+    public function dialForAgent(Agent $agent, ?int $companyId = null): ?Call
     {
         $smartQueue = app(SmartQueueService::class);
-        $contact = $smartQueue->getNext($agent);
+        $contact = $smartQueue->getNext($agent, $companyId);
 
         if (! $contact) {
             return null;

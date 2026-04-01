@@ -806,7 +806,7 @@ class extends Component
         }
         $agent = Agent::findOrFail($this->agentId);
         $service = app(PowerDialerService::class);
-        $call = $service->dialForAgent($agent);
+        $call = $service->dialForAgent($agent, $this->filterCompanyId);
 
         if (! $call) {
             $this->dispatch('dial-error', message: 'No contacts available in queue');
