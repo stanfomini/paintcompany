@@ -129,7 +129,7 @@ class TwilioVoiceController extends Controller
             $dial = $response->dial();
             $dial->conference($conferenceName, [
                 'startConferenceOnEnter' => true,
-                'endConferenceOnExit' => false,
+                'endConferenceOnExit' => true,
                 'beep' => false,
             ]);
         } elseif (str_starts_with($to, 'client:')) {

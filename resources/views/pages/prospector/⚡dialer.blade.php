@@ -803,6 +803,44 @@ class extends Component
         $this->dialNext();
     }
 
+    public function endCall(): void
+    {
+        if (! $this->activeCallId) {
+            return;
+        }
+
+        $call = Call::find($this->activeCallId);
+
+        if (! $call) {
+            return;
+        }
+
+        // End the Twilio conference (hangs up all participants including the contact)
+        if ($call->twilio_conference_sid) {
+            try {
+                app(ConferenceService::class)->endConference($call->twilio_conference_sid);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning('Failed to end conference on hangup', [
+                    'call_id' => $call->id,
+                    'conference' => $call->twilio_conference_sid,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Mark call completed if not already in a terminal status
+        if (! in_array($call->status, ['completed', 'failed', 'canceled', 'busy', 'no_answer', 'voicemail'])) {
+            $call->markCompleted();
+        }
+
+        // Broadcast ended event
+        broadcast(new \App\Events\Prospector\DialerCallEnded($call->fresh(), $this->agentId));
+
+        $this->callStatus = 'ended';
+        $this->showDisposition = true;
+        $this->agentStatus = 'wrap_up';
+    }
+
     public function submitDisposition(string $disposition, ?string $callbackAt = null): void
     {
         if (! $this->activeCallId) {
@@ -1250,6 +1288,7 @@ class extends Component
         smsOpen: $wire.entangle('smsOpen'),
 
         deviceReady: false,
+        pendingInit: null,
 
         // Stage 4 UI state
         showDtmf: false,
@@ -1355,6 +1394,11 @@ class extends Component
         connectionDebug: null,
 
         async connectToConference(conferenceName) {
+            // Prevent double-join if already connected
+            if (window.__twilio.connection) {
+                this.connectionDebug = 'Already connected';
+                return;
+            }
             this.connectionDebug = 'Joining conference...';
             // Wait for device to be ready (handles company switching delay)
             if (!this.deviceReady && window.__twilio.device) {
@@ -1412,6 +1456,8 @@ class extends Component
                 window.__twilio.connection = null;
             }
             this.connectionDebug = null;
+            // End the Twilio conference and update call status server-side
+            $wire.endCall();
         },
 
         sendDtmf(digit) {
@@ -1429,7 +1475,9 @@ class extends Component
             this.initTwilio();
 
             // Listen for Livewire dispatches
-            this.$wire.on('join-conference', ({ conferenceName }) => {
+            this.$wire.on('join-conference', async ({ conferenceName }) => {
+                // Wait for any in-flight company switch to finish first
+                if (this.pendingInit) await this.pendingInit;
                 this.connectToConference(conferenceName);
             });
 
@@ -1446,7 +1494,9 @@ class extends Component
             // Voice SDK company, it dispatches this event to switch credentials first
             this.$wire.on('ensure-voice-company', async ({ companyId }) => {
                 if (companyId && companyId !== window.__twilio.companyId) {
-                    await this.initTwilio(companyId);
+                    this.pendingInit = this.initTwilio(companyId);
+                    await this.pendingInit;
+                    this.pendingInit = null;
                 }
             });
 
@@ -1459,8 +1509,8 @@ class extends Component
             // Re-fetch queue when server-side filters change
             $watch('$wire.filterCompanyId', (newVal) => {
                 this.loadQueue();
-                // Re-init Voice SDK for the selected company
-                if (newVal && newVal !== window.__twilio.companyId) {
+                // Re-init Voice SDK for the selected company, but NOT during an active call
+                if (newVal && newVal !== window.__twilio.companyId && !window.__twilio.connection) {
                     this.initTwilio(newVal);
                 }
             });
@@ -1499,7 +1549,13 @@ class extends Component
                     })
                     .listen('.dialer.call.ended', (e) => {
                         this.stopTimer();
-                        this.hangUp();
+                        // Only disconnect WebRTC locally — server already ended the call
+                        const conn = window.__twilio.connection;
+                        if (conn) {
+                            conn.disconnect();
+                            window.__twilio.connection = null;
+                        }
+                        this.connectionDebug = null;
                         $wire.onCallEnded(e);
                     })
                     .listen('.supervisor.joined', (e) => {
