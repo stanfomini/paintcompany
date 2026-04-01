@@ -229,33 +229,33 @@ class TwilioVoiceController extends Controller
             'twilio_conference_sid' => $conferenceName,
         ]);
 
-        // Dial the contact into the conference via Participants API (async after TwiML response)
-        // We dispatch this AFTER returning TwiML so the agent connects first
-        defer(function () use ($conferenceName, $contact, $fromNumber, $call) {
-            try {
-                $amdParams = [];
-                if (config('prospector.defaults.amd_enabled')) {
-                    $amdService = app(\App\Services\Prospector\AmdService::class);
-                    $amdParams = $amdService->getAmdParams();
-                }
-
-                $callSid = $this->conferenceService->dialContactIntoConference(
-                    $conferenceName,
-                    $contact,
-                    $fromNumber,
-                    $amdParams,
-                );
-
-                $call->update(['twilio_call_sid' => $callSid]);
-            } catch (\Exception $e) {
-                Log::error('handleOutboundDial: failed to dial contact', [
-                    'call_id' => $call->id,
-                    'contact_id' => $contact->id,
-                    'error' => $e->getMessage(),
-                ]);
-                $call->markFailed();
+        // Dial the contact into the conference via Participants API.
+        // This runs synchronously — the TwiML response is sent after this completes.
+        // The agent's WebRTC connection is being established in parallel by Twilio
+        // while we make this API call, so the agent still connects first.
+        try {
+            $amdParams = [];
+            if (config('prospector.defaults.amd_enabled')) {
+                $amdService = app(\App\Services\Prospector\AmdService::class);
+                $amdParams = $amdService->getAmdParams();
             }
-        });
+
+            $callSid = $this->conferenceService->dialContactIntoConference(
+                $conferenceName,
+                $contact,
+                $fromNumber,
+                $amdParams,
+            );
+
+            $call->update(['twilio_call_sid' => $callSid]);
+        } catch (\Exception $e) {
+            Log::error('handleOutboundDial: failed to dial contact', [
+                'call_id' => $call->id,
+                'contact_id' => $contact->id,
+                'error' => $e->getMessage(),
+            ]);
+            $call->markFailed();
+        }
 
         // Broadcast ringing event to agent's browser
         broadcast(new \App\Events\Prospector\DialerCallRinging($call, $agent->id));
