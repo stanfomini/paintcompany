@@ -3,19 +3,15 @@
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\CallScript;
-use App\Models\Prospector\Campaign;
-use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\CompanyBookingLink;
 use App\Models\Prospector\Contact;
 use App\Models\Prospector\ContactNote;
-use App\Models\Prospector\DialerSession;
 use App\Models\Prospector\PipelineStage;
 use App\Models\Prospector\RvmTemplate;
 use App\Models\Prospector\SmsMessage;
 use App\Services\Prospector\AgentStateService;
 use App\Services\Prospector\ConferenceService;
-use App\Services\Prospector\ParallelDialerService;
 use App\Services\Prospector\PowerDialerService;
 use App\Services\Prospector\ProspectorSmsService;
 use App\Services\Prospector\RvmService;
@@ -550,12 +546,12 @@ class extends Component
     // Manual Dial & Quick-Add
     // ──────────────────────────────────────
 
-    public function manualDial(): void
+    public function manualDial(): array
     {
         $number = preg_replace('/[^0-9+]/', '', $this->manualDialNumber);
 
         if (strlen($number) < 10 || ! $this->agent) {
-            return;
+            return ['error' => 'Invalid number or no agent'];
         }
 
         // Use the filtered company if set, otherwise the agent's default
@@ -577,87 +573,41 @@ class extends Component
             $contact = $result->contact;
         }
 
-        $this->dialContact($contact->id);
         $this->manualDialNumber = '';
+
+        return $this->dialContact($contact->id);
     }
 
-    public function dialContact(int $contactId): void
+    public function dialContact(int $contactId): array
     {
         if (! $this->agent) {
-            return;
+            return ['error' => 'No agent'];
         }
 
-        $contact = Contact::with('company.twilioAccount')->find($contactId);
+        $contact = Contact::with('company')->find($contactId);
 
         if (! $contact || ! $contact->company) {
-            return;
+            return ['error' => 'Contact not found'];
         }
 
-        $agent = Agent::findOrFail($this->agentId);
-        $company = $contact->company;
-
-        // Select phone number using the CONTACT's company (not the agent's)
-        $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
-
-        try {
-            $fromNumber = $numberService->selectNumber($company, $contact, null);
-        } catch (\RuntimeException $e) {
-            $this->dispatch('dial-error', message: $e->getMessage());
-
-            return;
-        }
-
-        // Create conference
-        $conferenceService = app(ConferenceService::class);
-        $conferenceName = 'manual-' . \Illuminate\Support\Str::ulid();
-
-        // Create call record
-        $call = Call::create([
-            'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
-            'company_id' => $company->id,
-            'agent_id' => $agent->id,
-            'contact_id' => $contact->id,
-            'dialer_session_id' => null,
-            'from_phone_number_id' => $fromNumber->id,
-            'from_number' => $fromNumber->getEffectiveCallerId(),
-            'to_number' => $contact->phone,
-            'direction' => 'outbound',
-            'status' => 'ringing',
-            'started_at' => now(),
-            'twilio_conference_sid' => $conferenceName,
-        ]);
-
-        // Set active call state
-        $this->setActiveCallFromCall($call->load('contact'));
+        // Set UI state
+        $this->activeContact = [
+            'id' => $contact->id,
+            'name' => $contact->getFullName(),
+            'phone' => $contact->getDisplayPhone(),
+        ];
+        $this->previewContactId = $contact->id;
+        $this->callStatus = 'ringing';
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
-
-        // Ensure the Voice SDK is connected to the correct company before joining
-        $this->dispatch('ensure-voice-company', companyId: $company->id);
-
-        // Dispatch the conference dial to Twilio (async — the browser will join via the Alpine event)
-        $this->dispatch('join-conference', conferenceName: $conferenceName);
-
-        // Dial the contact into the conference via Twilio REST API
-        try {
-            $amdParams = [];
-            if (config('prospector.defaults.amd_enabled')) {
-                $amdService = app(\App\Services\Prospector\AmdService::class);
-                $amdParams = $amdService->getAmdParams();
-            }
-            $callSid = $conferenceService->dialContactIntoConference($conferenceName, $contact, $fromNumber, $amdParams);
-            $call->update(['twilio_call_sid' => $callSid]);
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to dial contact', [
-                'contact_id' => $contact->id,
-                'error' => $e->getMessage(),
-            ]);
-            $call->markFailed();
-            $this->resetCallState();
-            $this->dispatch('dial-error', message: $e->getMessage());
-        }
-
+        $this->loadContactState($contact->id);
         $this->clearCaches();
+
+        return [
+            'phone' => $contact->phone,
+            'contactId' => $contact->id,
+            'companyId' => $contact->company_id,
+        ];
     }
 
     public function quickAddContact(string $firstName, string $phone): void
@@ -699,78 +649,41 @@ class extends Component
     // Call Controls
     // ──────────────────────────────────────
 
-    public function dialNext(): void
+    public function dialNext(): array
     {
-        if (! $this->agentId || $this->agentStatus === 'offline') {
-            return;
+        if (! $this->agent) {
+            return ['error' => 'No agent'];
         }
+
         $agent = Agent::findOrFail($this->agentId);
-        $service = app(PowerDialerService::class);
-        $call = $service->dialForAgent($agent);
+        $smartQueue = app(SmartQueueService::class);
+        $contact = $smartQueue->getNext($agent, $this->filterCompanyId);
 
-        if (! $call) {
-            $this->dispatch('dial-error', message: 'No contacts available in queue');
-
-            return;
+        if (! $contact) {
+            return ['error' => 'No contacts available in queue'];
         }
 
-        $call->load('contact');
-        $this->setActiveCallFromCall($call);
+        if (! $smartQueue->claim($contact, $agent)) {
+            return ['error' => 'Contact was claimed by another agent'];
+        }
+
+        $this->activeContact = [
+            'id' => $contact->id,
+            'name' => $contact->getFullName(),
+            'phone' => $contact->getDisplayPhone(),
+        ];
+        $this->previewContactId = $contact->id;
+        $this->callStatus = 'ringing';
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
-        $conferenceName = $call->twilio_conference_sid;
-        $this->dispatch('ensure-voice-company', companyId: $call->company_id);
-        $this->dispatch('join-conference', conferenceName: $conferenceName);
+        $this->loadContactState($contact->id);
         $this->clearCaches();
-    }
 
-    private function dialNextSingle(DialerSession $session): void
-    {
-        $service = app(PowerDialerService::class);
-        $call = $service->dialNext($session);
-
-        if ($call) {
-            $call->load('contact');
-            $this->setActiveCallFromCall($call);
-            $this->agentStatus = 'ringing';
-            $this->showDisposition = false;
-        } else {
-            $this->resetCallState();
-        }
-
-        $this->clearCaches();
-    }
-
-    private function dialNextParallel(DialerSession $session): void
-    {
-        $service = app(ParallelDialerService::class);
-        $calls = $service->dialNextBatch($session);
-
-        $this->parallelLines = [];
-        $this->connectedLineIndex = null;
-
-        if (! empty($calls)) {
-            foreach ($calls as $i => $call) {
-                $call->load('contact');
-                $this->parallelLines[] = [
-                    'call_id' => $call->id,
-                    'contact_name' => $call->contact->getFullName(),
-                    'phone' => $call->contact->getDisplayPhone(),
-                    'status' => 'ringing',
-                ];
-            }
-
-            // Set first call as the active one (for contact detail display)
-            $firstCall = $calls[0];
-            $this->setActiveCallFromCall($firstCall);
-            $this->agentStatus = 'ringing';
-            $this->callStatus = 'ringing';
-            $this->showDisposition = false;
-        } else {
-            $this->resetCallState();
-        }
-
-        $this->clearCaches();
+        return [
+            'phone' => $contact->phone,
+            'contactId' => $contact->id,
+            'companyId' => $contact->company_id,
+        ];
     }
 
     private function setActiveCallFromCall(Call $call): void
@@ -800,7 +713,18 @@ class extends Component
     public function skipContact(): void
     {
         $this->resetCallState();
-        $this->dialNext();
+
+        // Auto-preview next contact without dialing
+        $agent = Agent::findOrFail($this->agentId);
+        $smartQueue = app(SmartQueueService::class);
+        $next = $smartQueue->getNext($agent, $this->filterCompanyId);
+
+        if ($next) {
+            $this->previewContactId = $next->id;
+            $this->loadContactState($next->id);
+        }
+
+        $this->clearCaches();
     }
 
     public function submitDisposition(string $disposition, ?string $callbackAt = null): void
@@ -832,9 +756,16 @@ class extends Component
         $this->connectedLineIndex = null;
         $this->clearCaches();
 
-        // Auto-advance to next contact if agent is active
+        // Auto-preview next contact (agent clicks Dial Next to actually call)
         if ($this->agentStatus !== 'offline') {
-            $this->dialNext();
+            $agent = Agent::findOrFail($this->agentId);
+            $smartQueue = app(SmartQueueService::class);
+            $next = $smartQueue->getNext($agent, $this->filterCompanyId);
+
+            if ($next) {
+                $this->previewContactId = $next->id;
+                $this->loadContactState($next->id);
+            }
         }
     }
 
@@ -1146,10 +1077,6 @@ class extends Component
         }
 
         $this->clearCaches();
-
-        if ($conferenceName = $data['conference_name'] ?? null) {
-            $this->dispatch('join-conference', conferenceName: $conferenceName);
-        }
     }
 
     public function updatedFilterCompanyId($value): void
@@ -1164,7 +1091,7 @@ class extends Component
     // Helpers
     // ──────────────────────────────────────
 
-    protected function resetCallState(): void
+    public function resetCallState(): void
     {
         $this->activeCallId = null;
         $this->activeCallUlid = null;
@@ -1237,9 +1164,9 @@ class extends Component
     }
 }; ?>
 
-{{-- Twilio SDK objects stored outside Alpine to avoid Proxy conflicts --}}
+{{-- SoftphoneManager instance stored outside Alpine to avoid Proxy conflicts --}}
 <script>
-    window.__twilio = { device: null, connection: null, companyId: null };
+    window.__softphone = null;
 </script>
 
 <div
@@ -1249,7 +1176,10 @@ class extends Component
         muted: $wire.entangle('isMuted'),
         smsOpen: $wire.entangle('smsOpen'),
 
-        deviceReady: false,
+        phoneReady: false,
+        phoneError: null,
+        phoneState: 'idle',
+        phoneCompanyId: null,
 
         // Stage 4 UI state
         showDtmf: false,
@@ -1302,137 +1232,98 @@ class extends Component
             return m + ':' + s;
         },
 
-        phoneError: null,
+        async initPhone() {
+            const SoftphoneManager = await window.loadSoftphone();
+            window.__softphone = new SoftphoneManager();
+            const phone = window.__softphone;
 
-        async initTwilio(companyId = null) {
-            try {
-                // Destroy existing device if re-initializing for a different company
-                if (window.__twilio.device) {
-                    this.deviceReady = false;
-                    window.__twilio.device.destroy();
-                    window.__twilio.device = null;
-                    window.__twilio.connection = null;
-                }
+            phone.on('ready', (companyId) => {
+                this.phoneReady = true;
+                this.phoneError = null;
+                this.phoneCompanyId = companyId;
+            });
 
-                const Device = await window.loadTwilioVoice();
-                const tokenUrl = companyId
-                    ? '/prospector/voice/token?company_id=' + companyId
-                    : '/prospector/voice/token';
-                const res = await fetch(tokenUrl);
-                const data = await res.json();
+            phone.on('error', (msg) => {
+                this.phoneError = msg;
+            });
 
-                if (!res.ok || data.error) {
-                    this.phoneError = data.error || 'Failed to get phone token';
-                    return;
-                }
+            phone.on('state-change', (state) => {
+                this.phoneState = state;
+            });
 
-                window.__twilio.companyId = data.company_id || null;
-
-                const device = new Device(data.token, {
-                    codecPreferences: ['opus', 'pcmu'],
-                    edge: 'ashburn',
+            phone.on('incoming', (info) => {
+                $wire.onInboundCallRinging({
+                    from_number: info.from,
+                    call_sid: info.callSid,
                 });
+            });
 
-                device.on('registered', () => {
-                    this.deviceReady = true;
-                    this.phoneError = null;
-                });
-                device.on('error', (err) => {
-                    this.phoneError = err.message || 'Phone error';
-                });
-                device.on('incoming', (call) => {
-                    call.accept();
-                    window.__twilio.connection = call;
-                });
+            phone.on('incoming-canceled', () => {
+                this.phoneState = 'idle';
+                $wire.onCallEnded({});
+            });
 
-                await device.register();
-                window.__twilio.device = device;
-            } catch (err) {
-                this.phoneError = err.message || 'Failed to connect phone';
-            }
+            phone.on('disconnected', () => {
+                this.stopTimer();
+            });
+
+            await phone.init();
         },
 
-        connectionDebug: null,
+        async dialOut(phone, contactId, companyId) {
+            const sp = window.__softphone;
+            if (!sp) { this.phoneError = 'Phone not initialized'; return; }
 
-        async connectToConference(conferenceName) {
-            this.connectionDebug = 'Joining conference...';
-            // Wait for device to be ready (handles company switching delay)
-            if (!this.deviceReady && window.__twilio.device) {
-                this.connectionDebug = 'Waiting for device...';
-                for (let i = 0; i < 30; i++) {
-                    await new Promise(r => setTimeout(r, 200));
-                    if (this.deviceReady) break;
+            if (companyId && companyId !== sp.companyId) {
+                await sp.switchCompany(companyId);
+                if (!sp.isReady) {
+                    for (let i = 0; i < 30; i++) {
+                        await new Promise(r => setTimeout(r, 200));
+                        if (sp.isReady) break;
+                    }
+                }
+                if (!sp.isReady) {
+                    this.phoneError = 'Failed to switch company phone';
+                    return;
                 }
             }
-            if (!window.__twilio.device) {
-                this.phoneError = 'Phone not initialized — cannot join call';
-                this.connectionDebug = 'FAIL: no device';
-                return;
-            }
-            if (!this.deviceReady) {
-                this.phoneError = 'Phone not ready — cannot join call';
-                this.connectionDebug = 'FAIL: not registered';
-                return;
-            }
-            try {
-                this.connectionDebug = 'Connecting WebRTC...';
-                const conn = await window.__twilio.device.connect({
-                    params: { conference: conferenceName }
-                });
-                // Store on plain object — NOT on Alpine reactive property
-                window.__twilio.connection = conn;
-                this.connectionDebug = 'Connected';
-                conn.on('disconnect', () => {
-                    window.__twilio.connection = null;
-                    this.connectionDebug = null;
-                });
-                conn.on('error', (err) => {
-                    this.phoneError = 'Call error: ' + (err.message || err);
-                    this.connectionDebug = 'ERROR: ' + (err.message || err);
-                });
-            } catch (err) {
-                this.phoneError = 'Failed to join call: ' + (err.message || err);
-                this.connectionDebug = 'FAIL: ' + (err.message || err);
-            }
+
+            await sp.dial({ To: phone, contactId: String(contactId) });
+        },
+
+        answerInbound() {
+            if (window.__softphone) window.__softphone.accept();
+        },
+
+        declineInbound() {
+            if (window.__softphone) window.__softphone.reject();
+            $wire.resetCallState();
         },
 
         toggleMute() {
-            const conn = window.__twilio.connection;
-            if (conn) {
-                const muted = !conn.isMuted();
-                conn.mute(muted);
-                this.muted = muted;
+            if (window.__softphone) {
+                const newMuted = !this.muted;
+                window.__softphone.mute(newMuted);
+                this.muted = newMuted;
             }
         },
 
         hangUp() {
-            const conn = window.__twilio.connection;
-            if (conn) {
-                conn.disconnect();
-                window.__twilio.connection = null;
-            }
-            this.connectionDebug = null;
+            if (window.__softphone) window.__softphone.hangup();
         },
 
         sendDtmf(digit) {
-            const conn = window.__twilio.connection;
-            if (conn) {
-                conn.sendDigits(digit);
-            }
+            if (window.__softphone) window.__softphone.sendDtmf(digit);
         },
 
         // Track subscribed company channel IDs for cleanup
         subscribedCompanyIds: [],
 
         init() {
-            // Initialize Twilio Voice SDK
-            this.initTwilio();
+            // Initialize SoftphoneManager
+            this.initPhone();
 
             // Listen for Livewire dispatches
-            this.$wire.on('join-conference', ({ conferenceName }) => {
-                this.connectToConference(conferenceName);
-            });
-
             this.$wire.on('queue-reload', () => {
                 this.loadQueue();
             });
@@ -1440,14 +1331,6 @@ class extends Component
             this.$wire.on('dial-error', ({ message }) => {
                 this.phoneError = 'Call failed: ' + message;
                 setTimeout(() => { this.phoneError = null; }, 10000);
-            });
-
-            // When dialContact detects the contact's company differs from the active
-            // Voice SDK company, it dispatches this event to switch credentials first
-            this.$wire.on('ensure-voice-company', async ({ companyId }) => {
-                if (companyId && companyId !== window.__twilio.companyId) {
-                    await this.initTwilio(companyId);
-                }
             });
 
             // Load initial queue
@@ -1459,9 +1342,8 @@ class extends Component
             // Re-fetch queue when server-side filters change
             $watch('$wire.filterCompanyId', (newVal) => {
                 this.loadQueue();
-                // Re-init Voice SDK for the selected company
-                if (newVal && newVal !== window.__twilio.companyId) {
-                    this.initTwilio(newVal);
+                if (newVal && window.__softphone) {
+                    window.__softphone.switchCompany(newVal);
                 }
             });
             $watch('$wire.queueSearch', () => { this.loadQueue(); });
@@ -1491,11 +1373,6 @@ class extends Component
                     .listen('.dialer.call.connected', (e) => {
                         $wire.onCallConnected(e);
                         this.startTimer();
-
-                        // Auto-join the conference via WebRTC
-                        if (e.conference_name) {
-                            this.connectToConference(e.conference_name);
-                        }
                     })
                     .listen('.dialer.call.ended', (e) => {
                         this.stopTimer();
@@ -1549,7 +1426,6 @@ class extends Component
 
         destroy() {
             this.stopTimer();
-            this.hangUp();
             if (this.syncInterval) {
                 clearInterval(this.syncInterval);
                 this.syncInterval = null;
@@ -1560,10 +1436,9 @@ class extends Component
                     Echo.leave('prospector.company.' + cid);
                 });
             }
-            if (window.__twilio.device) {
-                window.__twilio.device.unregister();
-                window.__twilio.device.destroy();
-                window.__twilio.device = null;
+            if (window.__softphone) {
+                window.__softphone.destroy();
+                window.__softphone = null;
             }
             if (typeof Echo !== 'undefined' && $wire.agentId) {
                 Echo.leave('prospector.agent.' + $wire.agentId);
@@ -1689,7 +1564,17 @@ class extends Component
                     <span x-text="filteredQueue.length"></span> contacts
                 </span>
                 @if ($agentStatus === 'available' && $callStatus === 'idle' && ! $showDisposition)
-                    <flux:button size="xs" variant="primary" icon="phone-arrow-up-right" wire:click="dialNext">
+                    <flux:button size="xs" variant="primary" icon="phone-arrow-up-right"
+                        x-on:click="
+                            const result = await $wire.dialNext();
+                            if (result.error) {
+                                phoneError = result.error;
+                                setTimeout(() => phoneError = null, 5000);
+                            } else {
+                                await dialOut(result.phone, result.contactId, result.companyId);
+                            }
+                        "
+                    >
                         Dial Next
                     </flux:button>
                 @endif
@@ -1745,7 +1630,17 @@ class extends Component
                             <div class="flex items-center justify-between">
                                 <flux:heading size="sm">Contact</flux:heading>
                                 @if ($callStatus === 'idle')
-                                    <flux:button size="xs" variant="primary" icon="phone" wire:click="dialContact({{ $cd->id }})">
+                                    <flux:button size="xs" variant="primary" icon="phone"
+                                        x-on:click="
+                                            const result = await $wire.dialContact({{ $cd->id }});
+                                            if (result.error) {
+                                                phoneError = result.error;
+                                                setTimeout(() => phoneError = null, 5000);
+                                            } else {
+                                                await dialOut(result.phone, result.contactId, result.companyId);
+                                            }
+                                        "
+                                    >
                                         Call
                                     </flux:button>
                                 @endif
@@ -1921,20 +1816,17 @@ class extends Component
 
                 {{-- Softphone Status Bar — always visible --}}
                 <div class="rounded-lg border bg-white dark:bg-zinc-800"
-                    :class="deviceReady ? 'border-green-300 dark:border-green-700' : (phoneError ? 'border-red-300 dark:border-red-700' : 'border-amber-300 dark:border-amber-700')"
+                    :class="phoneReady ? 'border-green-300 dark:border-green-700' : (phoneError ? 'border-red-300 dark:border-red-700' : 'border-amber-300 dark:border-amber-700')"
                 >
                     <div class="flex items-center justify-between px-4 py-2.5">
                         <div class="flex items-center gap-2">
-                            <span class="inline-flex size-2.5 rounded-full" :class="deviceReady ? 'bg-green-500' : (phoneError ? 'bg-red-500' : 'bg-amber-500 animate-pulse')"></span>
+                            <span class="inline-flex size-2.5 rounded-full" :class="phoneReady ? 'bg-green-500' : (phoneError ? 'bg-red-500' : 'bg-amber-500 animate-pulse')"></span>
                             <span class="text-sm font-medium"
-                                :class="deviceReady ? 'text-green-700 dark:text-green-400' : (phoneError ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400')"
-                                x-text="deviceReady ? 'Phone Ready' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
+                                :class="phoneReady ? 'text-green-700 dark:text-green-400' : (phoneError ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400')"
+                                x-text="phoneReady ? 'Phone Ready' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
                             ></span>
                             <template x-if="phoneError">
                                 <span class="text-xs text-red-500 dark:text-red-400" x-text="phoneError"></span>
-                            </template>
-                            <template x-if="connectionDebug && !phoneError">
-                                <span class="text-xs text-blue-500 dark:text-blue-400" x-text="connectionDebug"></span>
                             </template>
                         </div>
                         <div class="flex items-center gap-2">
@@ -1944,8 +1836,8 @@ class extends Component
                             @if ($callStatus === 'connected')
                                 <span class="font-mono text-sm font-bold text-green-600 dark:text-green-400" x-text="formatTime(callTimer)">00:00</span>
                             @endif
-                            <template x-if="!deviceReady">
-                                <button type="button" x-on:click="initTwilio()" class="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400">Retry</button>
+                            <template x-if="!phoneReady">
+                                <button type="button" x-on:click="initPhone()" class="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400">Retry</button>
                             </template>
                         </div>
                     </div>
@@ -2118,11 +2010,31 @@ class extends Component
                             {{-- Idle / ready state — always show dial buttons --}}
                             <div class="flex items-center justify-between">
                                 <div class="flex gap-2">
-                                    <flux:button variant="primary" size="sm" icon="phone-arrow-up-right" wire:click="dialNext">
-                                        {{ $dialerMode === 'parallel' ? 'Dial Batch' : 'Dial Next' }}
+                                    <flux:button variant="primary" size="sm" icon="phone-arrow-up-right"
+                                        x-on:click="
+                                            const result = await $wire.dialNext();
+                                            if (result.error) {
+                                                phoneError = result.error;
+                                                setTimeout(() => phoneError = null, 5000);
+                                            } else {
+                                                await dialOut(result.phone, result.contactId, result.companyId);
+                                            }
+                                        "
+                                    >
+                                        Dial Next
                                     </flux:button>
                                     @if ($this->contactDetail)
-                                        <flux:button variant="filled" size="sm" icon="phone" wire:click="dialContact({{ $this->contactDetail->id }})">
+                                        <flux:button variant="filled" size="sm" icon="phone"
+                                            x-on:click="
+                                                const result = await $wire.dialContact({{ $this->contactDetail->id }});
+                                                if (result.error) {
+                                                    phoneError = result.error;
+                                                    setTimeout(() => phoneError = null, 5000);
+                                                } else {
+                                                    await dialOut(result.phone, result.contactId, result.companyId);
+                                                }
+                                            "
+                                        >
                                             Call {{ $this->contactDetail->getFullName() }}
                                         </flux:button>
                                     @endif
@@ -2133,15 +2045,25 @@ class extends Component
                             </div>
                             {{-- Manual Dial Input --}}
                             <div x-show="showManualDial" x-collapse class="mt-3">
-                                <form wire:submit="manualDial" class="flex gap-2">
+                                <div class="flex gap-2">
                                     <input
                                         type="tel"
                                         wire:model="manualDialNumber"
                                         placeholder="Enter phone number..."
                                         class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
                                     />
-                                    <flux:button type="submit" size="sm" variant="primary" icon="phone">Dial</flux:button>
-                                </form>
+                                    <flux:button size="sm" variant="primary" icon="phone"
+                                        x-on:click="
+                                            const result = await $wire.manualDial();
+                                            if (result.error) {
+                                                phoneError = result.error;
+                                                setTimeout(() => phoneError = null, 5000);
+                                            } else {
+                                                await dialOut(result.phone, result.contactId, result.companyId);
+                                            }
+                                        "
+                                    >Dial</flux:button>
+                                </div>
                             </div>
                         @endif
 
