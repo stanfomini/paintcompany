@@ -64,6 +64,7 @@ class extends Component
     public bool $autoAnswerInbound = false;
     public ?string $preCallStatus = null;
     public int $wrapUpSeconds = 30;
+    public ?int $activeVoiceCompanyId = null;
 
     // SMS
     public string $smsBody = '';
@@ -322,10 +323,13 @@ class extends Component
         $companyId = $this->filterCompanyId;
 
         if (! $companyId) {
-            if ($this->agentId) {
-                $agent = Agent::find($this->agentId);
-                $companyId = $agent?->company_id;
-            }
+            // Use the company the Voice SDK is actually connected to
+            $companyId = $this->activeVoiceCompanyId;
+        }
+
+        if (! $companyId && $this->agentId) {
+            $agent = Agent::find($this->agentId);
+            $companyId = $agent?->company_id;
         }
 
         if (! $companyId) {
@@ -1349,6 +1353,11 @@ class extends Component
         $this->clearCaches();
     }
 
+    public function updatedActiveVoiceCompanyId(): void
+    {
+        unset($this->phoneReadiness);
+    }
+
     // ──────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────
@@ -1542,6 +1551,8 @@ class extends Component
                 }
 
                 window.__twilio.companyId = data.company_id || null;
+                // Sync active Voice SDK company back to Livewire for phoneReadiness
+                $wire.set('activeVoiceCompanyId', data.company_id || null);
 
                 const device = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
