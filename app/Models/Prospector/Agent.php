@@ -129,6 +129,17 @@ class Agent extends Model
     }
 
     /**
+     * Set the agent status to nearby.
+     */
+    public function goNearby(): void
+    {
+        $this->update([
+            'status' => 'nearby',
+            'status_changed_at' => now(),
+        ]);
+    }
+
+    /**
      * Set the agent status to on_call.
      */
     public function goOnCall(): void

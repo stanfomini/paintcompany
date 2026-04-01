@@ -14,6 +14,7 @@ class AgentStateService
     private const VALID_STATUSES = [
         'offline',
         'available',
+        'nearby',
         'on_call',
         'wrap_up',
         'break',
@@ -90,7 +91,7 @@ class AgentStateService
      */
     public function isAvailable(Agent $agent): bool
     {
-        return $this->getStatus($agent) === 'available';
+        return in_array($this->getStatus($agent), ['available', 'nearby'], true);
     }
 
     /**

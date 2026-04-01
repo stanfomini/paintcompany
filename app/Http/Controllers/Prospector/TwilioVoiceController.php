@@ -276,7 +276,7 @@ class TwilioVoiceController extends Controller
     {
         // Find ALL available agents via the pivot table
         $agents = Agent::whereHas('companies', fn ($q) => $q->where('prospector_companies.id', $company->id))
-            ->where('status', 'available')
+            ->whereIn('status', ['available', 'nearby'])
             ->get();
 
         if ($agents->isEmpty()) {
