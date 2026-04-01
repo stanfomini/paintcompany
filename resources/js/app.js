@@ -83,6 +83,14 @@ window.loadTwilioVoice = async () => {
     return window.TwilioDevice;
 };
 
+window.loadSoftphone = async () => {
+    if (!window._softphoneModule) {
+        const module = await import('./softphone.js');
+        window._softphoneModule = module.default;
+    }
+    return window._softphoneModule;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
