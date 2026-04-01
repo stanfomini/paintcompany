@@ -1207,6 +1207,11 @@ class extends Component
     }
 }; ?>
 
+{{-- Twilio SDK objects stored outside Alpine to avoid Proxy conflicts --}}
+<script>
+    window.__twilio = { device: null, connection: null, companyId: null };
+</script>
+
 <div
     x-data="{
         callTimer: 0,
@@ -1214,9 +1219,6 @@ class extends Component
         muted: $wire.entangle('isMuted'),
         smsOpen: $wire.entangle('smsOpen'),
 
-        // Twilio Voice SDK — stored outside Alpine's reactive proxy to avoid
-        // conflicts with SDK's non-configurable properties
-        _twilio: { device: null, connection: null, companyId: null },
         deviceReady: false,
 
         // Stage 4 UI state
@@ -1275,11 +1277,11 @@ class extends Component
         async initTwilio(companyId = null) {
             try {
                 // Destroy existing device if re-initializing for a different company
-                if (this._twilio.device) {
+                if (window.__twilio.device) {
                     this.deviceReady = false;
-                    this._twilio.device.destroy();
-                    this._twilio.device = null;
-                    this._twilio.connection = null;
+                    window.__twilio.device.destroy();
+                    window.__twilio.device = null;
+                    window.__twilio.connection = null;
                 }
 
                 const Device = await window.loadTwilioVoice();
@@ -1294,7 +1296,7 @@ class extends Component
                     return;
                 }
 
-                this._twilio.companyId = data.company_id || null;
+                window.__twilio.companyId = data.company_id || null;
 
                 const device = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
@@ -1310,11 +1312,11 @@ class extends Component
                 });
                 device.on('incoming', (call) => {
                     call.accept();
-                    this._twilio.connection = call;
+                    window.__twilio.connection = call;
                 });
 
                 await device.register();
-                this._twilio.device = device;
+                window.__twilio.device = device;
             } catch (err) {
                 this.phoneError = err.message || 'Failed to connect phone';
             }
@@ -1325,14 +1327,14 @@ class extends Component
         async connectToConference(conferenceName) {
             this.connectionDebug = 'Joining conference...';
             // Wait for device to be ready (handles company switching delay)
-            if (!this.deviceReady && this._twilio.device) {
+            if (!this.deviceReady && window.__twilio.device) {
                 this.connectionDebug = 'Waiting for device...';
                 for (let i = 0; i < 30; i++) {
                     await new Promise(r => setTimeout(r, 200));
                     if (this.deviceReady) break;
                 }
             }
-            if (!this._twilio.device) {
+            if (!window.__twilio.device) {
                 this.phoneError = 'Phone not initialized — cannot join call';
                 this.connectionDebug = 'FAIL: no device';
                 return;
@@ -1344,14 +1346,14 @@ class extends Component
             }
             try {
                 this.connectionDebug = 'Connecting WebRTC...';
-                const conn = await this._twilio.device.connect({
+                const conn = await window.__twilio.device.connect({
                     params: { conference: conferenceName }
                 });
                 // Store on plain object — NOT on Alpine reactive property
-                this._twilio.connection = conn;
+                window.__twilio.connection = conn;
                 this.connectionDebug = 'Connected';
                 conn.on('disconnect', () => {
-                    this._twilio.connection = null;
+                    window.__twilio.connection = null;
                     this.connectionDebug = null;
                 });
                 conn.on('error', (err) => {
@@ -1365,7 +1367,7 @@ class extends Component
         },
 
         toggleMute() {
-            const conn = this._twilio.connection;
+            const conn = window.__twilio.connection;
             if (conn) {
                 const muted = !conn.isMuted();
                 conn.mute(muted);
@@ -1374,16 +1376,16 @@ class extends Component
         },
 
         hangUp() {
-            const conn = this._twilio.connection;
+            const conn = window.__twilio.connection;
             if (conn) {
                 conn.disconnect();
-                this._twilio.connection = null;
+                window.__twilio.connection = null;
             }
             this.connectionDebug = null;
         },
 
         sendDtmf(digit) {
-            const conn = this._twilio.connection;
+            const conn = window.__twilio.connection;
             if (conn) {
                 conn.sendDigits(digit);
             }
@@ -1413,7 +1415,7 @@ class extends Component
             // When dialContact detects the contact's company differs from the active
             // Voice SDK company, it dispatches this event to switch credentials first
             this.$wire.on('ensure-voice-company', async ({ companyId }) => {
-                if (companyId && companyId !== this._twilio.companyId) {
+                if (companyId && companyId !== window.__twilio.companyId) {
                     await this.initTwilio(companyId);
                 }
             });
@@ -1428,7 +1430,7 @@ class extends Component
             $watch('$wire.filterCompanyId', (newVal) => {
                 this.loadQueue();
                 // Re-init Voice SDK for the selected company
-                if (newVal && newVal !== this._twilio.companyId) {
+                if (newVal && newVal !== window.__twilio.companyId) {
                     this.initTwilio(newVal);
                 }
             });
@@ -1511,10 +1513,10 @@ class extends Component
                     Echo.leave('prospector.company.' + cid);
                 });
             }
-            if (this._twilio.device) {
-                this._twilio.device.unregister();
-                this._twilio.device.destroy();
-                this._twilio.device = null;
+            if (window.__twilio.device) {
+                window.__twilio.device.unregister();
+                window.__twilio.device.destroy();
+                window.__twilio.device = null;
             }
             if (typeof Echo !== 'undefined' && $wire.agentId) {
                 Echo.leave('prospector.agent.' + $wire.agentId);
