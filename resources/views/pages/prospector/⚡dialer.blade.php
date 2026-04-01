@@ -1553,8 +1553,6 @@ class extends Component
                 }
 
                 window.__twilio.companyId = data.company_id || null;
-                // Sync active Voice SDK company back to Livewire for phoneReadiness
-                $wire.set('activeVoiceCompanyId', data.company_id || null);
 
                 const device = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
@@ -1564,6 +1562,9 @@ class extends Component
                 device.on('registered', () => {
                     this.deviceReady = true;
                     this.phoneError = null;
+                    // Sync company to Livewire AFTER device is fully registered
+                    // (doing it earlier triggers a re-render that disrupts initialization)
+                    $wire.set('activeVoiceCompanyId', window.__twilio.companyId);
                 });
                 device.on('error', (err) => {
                     this.phoneError = err.message || 'Phone error';
