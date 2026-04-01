@@ -1214,11 +1214,10 @@ class extends Component
         muted: $wire.entangle('isMuted'),
         smsOpen: $wire.entangle('smsOpen'),
 
-        // Twilio Voice SDK
-        twilioDevice: null,
-        activeConnection: null,
+        // Twilio Voice SDK — stored outside Alpine's reactive proxy to avoid
+        // conflicts with SDK's non-configurable properties
+        _twilio: { device: null, connection: null, companyId: null },
         deviceReady: false,
-        activeVoiceCompanyId: null,
 
         // Stage 4 UI state
         showDtmf: false,
@@ -1276,10 +1275,11 @@ class extends Component
         async initTwilio(companyId = null) {
             try {
                 // Destroy existing device if re-initializing for a different company
-                if (this.twilioDevice) {
+                if (this._twilio.device) {
                     this.deviceReady = false;
-                    this.twilioDevice.destroy();
-                    this.twilioDevice = null;
+                    this._twilio.device.destroy();
+                    this._twilio.device = null;
+                    this._twilio.connection = null;
                 }
 
                 const Device = await window.loadTwilioVoice();
@@ -1291,32 +1291,32 @@ class extends Component
 
                 if (!res.ok || data.error) {
                     this.phoneError = data.error || 'Failed to get phone token';
-                    console.error('Phone token error:', this.phoneError);
                     return;
                 }
 
-                this.activeVoiceCompanyId = data.company_id || null;
+                this._twilio.companyId = data.company_id || null;
 
-                this.twilioDevice = new Device(data.token, {
+                const device = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
                     edge: 'ashburn',
                 });
 
-                this.twilioDevice.on('registered', () => {
+                device.on('registered', () => {
                     this.deviceReady = true;
                     this.phoneError = null;
                 });
-                this.twilioDevice.on('error', (err) => {
-                    console.error('Twilio Device error:', err);
+                device.on('error', (err) => {
                     this.phoneError = err.message || 'Phone error';
                 });
-                this.twilioDevice.on('incoming', (call) => { call.accept(); this.activeConnection = call; });
+                device.on('incoming', (call) => {
+                    call.accept();
+                    this._twilio.connection = call;
+                });
 
-                await this.twilioDevice.register();
-                console.log('Twilio Device registered for company', this.activeVoiceCompanyId);
+                await device.register();
+                this._twilio.device = device;
             } catch (err) {
                 this.phoneError = err.message || 'Failed to connect phone';
-                console.error('Failed to initialize Twilio Device:', err);
             }
         },
 
@@ -1325,14 +1325,14 @@ class extends Component
         async connectToConference(conferenceName) {
             this.connectionDebug = 'Joining conference...';
             // Wait for device to be ready (handles company switching delay)
-            if (!this.deviceReady && this.twilioDevice) {
+            if (!this.deviceReady && this._twilio.device) {
                 this.connectionDebug = 'Waiting for device...';
                 for (let i = 0; i < 30; i++) {
                     await new Promise(r => setTimeout(r, 200));
                     if (this.deviceReady) break;
                 }
             }
-            if (!this.twilioDevice) {
+            if (!this._twilio.device) {
                 this.phoneError = 'Phone not initialized — cannot join call';
                 this.connectionDebug = 'FAIL: no device';
                 return;
@@ -1344,48 +1344,48 @@ class extends Component
             }
             try {
                 this.connectionDebug = 'Connecting WebRTC...';
-                this.activeConnection = await this.twilioDevice.connect({
+                const conn = await this._twilio.device.connect({
                     params: { conference: conferenceName }
                 });
+                // Store on plain object — NOT on Alpine reactive property
+                this._twilio.connection = conn;
                 this.connectionDebug = 'Connected';
-                this.activeConnection.on('disconnect', () => {
-                    this.activeConnection = null;
+                conn.on('disconnect', () => {
+                    this._twilio.connection = null;
                     this.connectionDebug = null;
                 });
-                this.activeConnection.on('error', (err) => {
+                conn.on('error', (err) => {
                     this.phoneError = 'Call error: ' + (err.message || err);
                     this.connectionDebug = 'ERROR: ' + (err.message || err);
                 });
             } catch (err) {
                 this.phoneError = 'Failed to join call: ' + (err.message || err);
                 this.connectionDebug = 'FAIL: ' + (err.message || err);
-                console.error('Failed to connect to conference:', err);
             }
         },
 
         toggleMute() {
-            if (this.activeConnection) {
-                const muted = !this.activeConnection.isMuted();
-                this.activeConnection.mute(muted);
+            const conn = this._twilio.connection;
+            if (conn) {
+                const muted = !conn.isMuted();
+                conn.mute(muted);
                 this.muted = muted;
             }
         },
 
         hangUp() {
-            if (this.activeConnection) {
-                this.activeConnection.disconnect();
-                this.activeConnection = null;
+            const conn = this._twilio.connection;
+            if (conn) {
+                conn.disconnect();
+                this._twilio.connection = null;
             }
             this.connectionDebug = null;
-            // Also tell the server to end the call if browser connection was broken
-            if ($wire.activeCallId) {
-                $wire.skipContact();
-            }
         },
 
         sendDtmf(digit) {
-            if (this.activeConnection) {
-                this.activeConnection.sendDigits(digit);
+            const conn = this._twilio.connection;
+            if (conn) {
+                conn.sendDigits(digit);
             }
         },
 
@@ -1413,7 +1413,7 @@ class extends Component
             // When dialContact detects the contact's company differs from the active
             // Voice SDK company, it dispatches this event to switch credentials first
             this.$wire.on('ensure-voice-company', async ({ companyId }) => {
-                if (companyId && companyId !== this.activeVoiceCompanyId) {
+                if (companyId && companyId !== this._twilio.companyId) {
                     await this.initTwilio(companyId);
                 }
             });
@@ -1428,7 +1428,7 @@ class extends Component
             $watch('$wire.filterCompanyId', (newVal) => {
                 this.loadQueue();
                 // Re-init Voice SDK for the selected company
-                if (newVal && newVal !== this.activeVoiceCompanyId) {
+                if (newVal && newVal !== this._twilio.companyId) {
                     this.initTwilio(newVal);
                 }
             });
@@ -1511,10 +1511,10 @@ class extends Component
                     Echo.leave('prospector.company.' + cid);
                 });
             }
-            if (this.twilioDevice) {
-                this.twilioDevice.unregister();
-                this.twilioDevice.destroy();
-                this.twilioDevice = null;
+            if (this._twilio.device) {
+                this._twilio.device.unregister();
+                this._twilio.device.destroy();
+                this._twilio.device = null;
             }
             if (typeof Echo !== 'undefined' && $wire.agentId) {
                 Echo.leave('prospector.agent.' + $wire.agentId);
