@@ -34,7 +34,8 @@ class AgentFactory extends Factory
 
     public function forCompany(Company $company): static
     {
-        return $this->state(fn () => ['company_id' => $company->id]);
+        return $this->state(fn () => ['company_id' => $company->id])
+            ->afterCreating(fn (Agent $agent) => $agent->companies()->syncWithoutDetaching([$company->id]));
     }
 
     public function available(): static

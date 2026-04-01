@@ -17,7 +17,7 @@ it('has a dialForAgent method that works without a session', function () {
 it('returns null when no contacts are queued', function () {
     $company = Company::factory()->create();
     $agent = Agent::factory()->forCompany($company)->available()->create();
-    $agent->companies()->attach($company->id);
+    $agent->companies()->syncWithoutDetaching([$company->id]);
 
     $service = app(PowerDialerService::class);
     $result = $service->dialForAgent($agent);
@@ -30,7 +30,7 @@ it('returns null when no contacts are queued', function () {
 it('returns null when campaign has no queued contacts', function () {
     $company = Company::factory()->create();
     $agent = Agent::factory()->forCompany($company)->available()->create();
-    $agent->companies()->attach($company->id);
+    $agent->companies()->syncWithoutDetaching([$company->id]);
     $campaign = Campaign::factory()->forCompany($company)->active()->create();
 
     $service = app(PowerDialerService::class);

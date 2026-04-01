@@ -256,3 +256,40 @@ it('returns queue as serializable array', function () {
     expect($array)->toHaveCount(1);
     expect($array[0])->toHaveKeys(['id', 'name', 'phone', 'company_name', 'pipeline_stage_id', 'pipeline_stage_name', 'queue_priority', 'has_unread_sms', 'follow_up_at', 'created_at', 'source']);
 });
+
+it('sorts contacts by pipeline stage sort_order within same priority tier', function () {
+    $stageA = PipelineStage::factory()->create(['pipeline_id' => $this->pipeline->id, 'sort_order' => 1, 'name' => 'New Lead']);
+    $stageB = PipelineStage::factory()->create(['pipeline_id' => $this->pipeline->id, 'sort_order' => 2, 'name' => 'Appointment Set']);
+    $stageC = PipelineStage::factory()->create(['pipeline_id' => $this->pipeline->id, 'sort_order' => 3, 'name' => 'Follow Up']);
+
+    $contactC = Contact::factory()->create([
+        'company_id' => $this->company->id, 'pipeline_stage_id' => $stageC->id, 'created_at' => now()->subHours(2),
+    ]);
+    $contactA = Contact::factory()->create([
+        'company_id' => $this->company->id, 'pipeline_stage_id' => $stageA->id, 'created_at' => now()->subHours(2),
+    ]);
+    $contactB = Contact::factory()->create([
+        'company_id' => $this->company->id, 'pipeline_stage_id' => $stageB->id, 'created_at' => now()->subHours(2),
+    ]);
+
+    $queue = $this->service->getQueue($this->agent);
+
+    expect($queue)->toHaveCount(3);
+    expect($queue[0]->id)->toBe($contactA->id);
+    expect($queue[1]->id)->toBe($contactB->id);
+    expect($queue[2]->id)->toBe($contactC->id);
+});
+
+it('includes company_color in queue array output', function () {
+    $this->company->update(['color' => '#3B82F6']);
+
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+    ]);
+
+    $array = $this->service->getQueueAsArray($this->agent);
+
+    expect($array[0])->toHaveKey('company_color');
+    expect($array[0]['company_color'])->toBe('#3B82F6');
+});

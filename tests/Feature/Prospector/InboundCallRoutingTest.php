@@ -1,12 +1,13 @@
 <?php
 
-use App\Events\Prospector\DialerCallRinging;
+use App\Events\Prospector\InboundCallRinging;
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\Contact;
 use App\Models\Prospector\PhoneNumber;
 use App\Models\Prospector\TwilioAccount;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Event;
 
 beforeEach(function () {
@@ -25,7 +26,7 @@ beforeEach(function () {
 // ─── Inbound Call Routing ────────────────────────────────
 
 it('creates contact if not exists on inbound call', function () {
-    Event::fake([DialerCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
 
     $agent = Agent::factory()->forCompany($this->company)->available()->create();
 
@@ -33,7 +34,7 @@ it('creates contact if not exists on inbound call', function () {
         'To' => '+17205550100',
         'From' => '+17205559999',
         'CallSid' => 'CA_inbound_test_1',
-    ])->assertStatus(200);
+    ])->assertSuccessful();
 
     $contact = Contact::where('company_id', $this->company->id)
         ->where('phone', '+17205559999')
@@ -45,7 +46,7 @@ it('creates contact if not exists on inbound call', function () {
 });
 
 it('routes inbound call to available agent', function () {
-    Event::fake([DialerCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
 
     $agent = Agent::factory()->forCompany($this->company)->available()->create();
 
@@ -55,7 +56,7 @@ it('routes inbound call to available agent', function () {
         'CallSid' => 'CA_inbound_route_1',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
     $response->assertHeader('Content-Type', 'application/xml');
 
     $xml = $response->getContent();
@@ -64,7 +65,7 @@ it('routes inbound call to available agent', function () {
 });
 
 it('creates inbound call record with direction inbound', function () {
-    Event::fake([DialerCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
 
     $agent = Agent::factory()->forCompany($this->company)->available()->create();
 
@@ -85,8 +86,9 @@ it('creates inbound call record with direction inbound', function () {
     expect($call->to_number)->toBe('+17205550100');
 });
 
-it('broadcasts DialerCallRinging on inbound call', function () {
-    Event::fake([DialerCallRinging::class]);
+it('broadcasts InboundCallRinging on inbound call', function () {
+    Event::fake([InboundCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
 
     $agent = Agent::factory()->forCompany($this->company)->available()->create();
 
@@ -96,13 +98,15 @@ it('broadcasts DialerCallRinging on inbound call', function () {
         'CallSid' => 'CA_inbound_broadcast_1',
     ]);
 
-    Event::assertDispatched(DialerCallRinging::class, function ($event) use ($agent) {
-        return $event->agentId === $agent->id
+    Event::assertDispatched(InboundCallRinging::class, function ($event) use ($agent) {
+        return in_array($agent->id, $event->agentIds)
             && $event->call->direction === 'inbound';
     });
 });
 
 it('goes to voicemail if no agents available', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
     // No agents created — none available
     $response = $this->post($this->inboundUrl, [
         'To' => '+17205550100',
@@ -110,7 +114,7 @@ it('goes to voicemail if no agents available', function () {
         'CallSid' => 'CA_inbound_noagent_1',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
 
     $xml = $response->getContent();
     expect($xml)->toContain('All of our agents are currently busy');
@@ -124,7 +128,7 @@ it('goes to voicemail for unknown phone number', function () {
         'CallSid' => 'CA_inbound_unknown_1',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
 
     $xml = $response->getContent();
     expect($xml)->toContain('no one is available');
@@ -132,7 +136,7 @@ it('goes to voicemail for unknown phone number', function () {
 });
 
 it('uses existing contact for known caller', function () {
-    Event::fake([DialerCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
 
     $agent = Agent::factory()->forCompany($this->company)->available()->create();
 
@@ -156,6 +160,8 @@ it('uses existing contact for known caller', function () {
 });
 
 it('skips busy agents and goes to voicemail', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
     // Agent exists but is on a call (not available)
     Agent::factory()->forCompany($this->company)->create(['status' => 'on_call']);
 
@@ -169,9 +175,11 @@ it('skips busy agents and goes to voicemail', function () {
     expect($xml)->toContain('All of our agents are currently busy');
 });
 
-// ─── IVR ─────────────────────────────────────────────────
+// ─── IVR (Legacy Flat Format) ──────────────────────────────
 
 it('renders IVR greeting when IVR is enabled', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
     $this->company->update([
         'settings' => [
             'ivr' => [
@@ -191,7 +199,7 @@ it('renders IVR greeting when IVR is enabled', function () {
         'CallSid' => 'CA_ivr_greeting_1',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
 
     $xml = $response->getContent();
     expect($xml)->toContain('<Gather');
@@ -200,7 +208,8 @@ it('renders IVR greeting when IVR is enabled', function () {
 });
 
 it('IVR routes to agent on digit 1', function () {
-    Event::fake([DialerCallRinging::class]);
+    Event::fake([InboundCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
 
     $agent = Agent::factory()->forCompany($this->company)->available()->create();
 
@@ -230,7 +239,7 @@ it('IVR routes to agent on digit 1', function () {
         'To' => '+17205550100',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
 
     $xml = $response->getContent();
     expect($xml)->toContain('<Conference');
@@ -260,7 +269,7 @@ it('IVR routes to voicemail on digit 2', function () {
         'CallSid' => 'CA_ivr_vm_1',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
 
     $xml = $response->getContent();
     expect($xml)->toContain('no one is available');
@@ -268,6 +277,8 @@ it('IVR routes to voicemail on digit 2', function () {
 });
 
 it('IVR replays on invalid digit', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
     $this->company->update([
         'settings' => [
             'ivr' => [
@@ -289,7 +300,7 @@ it('IVR replays on invalid digit', function () {
         'CallSid' => 'CA_ivr_invalid_1',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
 
     $xml = $response->getContent();
     // Should replay the IVR
@@ -305,14 +316,14 @@ it('IVR falls back to voicemail for invalid company', function () {
         'CallSid' => 'CA_ivr_badco_1',
     ]);
 
-    $response->assertStatus(200);
+    $response->assertSuccessful();
 
     $xml = $response->getContent();
     expect($xml)->toContain('no one is available');
 });
 
 it('does not use IVR when disabled', function () {
-    Event::fake([DialerCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
 
     $agent = Agent::factory()->forCompany($this->company)->available()->create();
 
@@ -336,4 +347,170 @@ it('does not use IVR when disabled', function () {
     // Should route directly, not show IVR
     expect($xml)->not->toContain('<Gather');
     expect($xml)->toContain('<Conference');
+});
+
+// ─── Dual-Flow IVR (Business Hours / After Hours) ──────────
+
+it('uses business hours IVR flow during business hours', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
+    $this->company->update([
+        'settings' => [
+            'ivr' => [
+                'enabled' => true,
+                'business_hours' => [
+                    'greeting' => 'Welcome during business hours. Press 1 for sales.',
+                    'options' => ['1' => ['action' => 'route_agent', 'label' => 'Sales']],
+                    'no_input_action' => 'route_agent',
+                ],
+                'after_hours' => [
+                    'greeting' => 'We are closed. Press 1 for voicemail.',
+                    'options' => ['1' => ['action' => 'voicemail', 'label' => 'Voicemail']],
+                    'no_input_action' => 'voicemail',
+                ],
+            ],
+        ],
+    ]);
+
+    $response = $this->post($this->inboundUrl, [
+        'To' => '+17205550100', 'From' => '+17205559999', 'CallSid' => 'CA_bh_during_1',
+    ]);
+
+    $xml = $response->getContent();
+    expect($xml)->toContain('Welcome during business hours');
+    expect($xml)->not->toContain('We are closed');
+});
+
+it('uses after hours IVR flow outside business hours', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 22:00:00', 'America/Denver'));
+
+    $this->company->update([
+        'settings' => [
+            'ivr' => [
+                'enabled' => true,
+                'business_hours' => [
+                    'greeting' => 'Welcome during business hours.',
+                    'options' => ['1' => ['action' => 'route_agent', 'label' => 'Sales']],
+                    'no_input_action' => 'route_agent',
+                ],
+                'after_hours' => [
+                    'greeting' => 'We are closed. Press 1 for voicemail.',
+                    'options' => ['1' => ['action' => 'voicemail', 'label' => 'Voicemail']],
+                    'no_input_action' => 'voicemail',
+                ],
+            ],
+        ],
+    ]);
+
+    $response = $this->post($this->inboundUrl, [
+        'To' => '+17205550100', 'From' => '+17205559999', 'CallSid' => 'CA_bh_after_1',
+    ]);
+
+    $xml = $response->getContent();
+    expect($xml)->toContain('We are closed');
+    expect($xml)->not->toContain('Welcome during business hours');
+});
+
+it('goes to voicemail after hours when IVR disabled', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 22:00:00', 'America/Denver'));
+
+    Agent::factory()->forCompany($this->company)->available()->create();
+    $this->company->update(['settings' => ['ivr' => ['enabled' => false]]]);
+
+    $response = $this->post($this->inboundUrl, [
+        'To' => '+17205550100', 'From' => '+17205559999', 'CallSid' => 'CA_noivr_after_1',
+    ]);
+
+    $xml = $response->getContent();
+    expect($xml)->toContain('currently closed');
+    expect($xml)->not->toContain('<Conference');
+});
+
+it('IVR plays info message and re-gathers on play_info action', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
+    $this->company->update([
+        'settings' => [
+            'ivr' => [
+                'enabled' => true,
+                'business_hours' => [
+                    'greeting' => 'Press 2 for info.',
+                    'options' => ['2' => ['action' => 'play_info', 'label' => 'Info', 'message' => 'Our hours are 8am to 5pm.']],
+                    'no_input_action' => 'voicemail',
+                ],
+                'after_hours' => ['greeting' => 'Closed.', 'options' => [], 'no_input_action' => 'voicemail'],
+            ],
+        ],
+    ]);
+
+    $contact = Contact::factory()->forCompany($this->company)->create();
+
+    $response = $this->post(route('prospector.webhook.twilio.voice.ivr-response'), [
+        'Digits' => '2', 'company_id' => $this->company->id, 'contact_id' => $contact->id, 'CallSid' => 'CA_playinfo_1',
+    ]);
+
+    $xml = $response->getContent();
+    expect($xml)->toContain('Our hours are 8am to 5pm');
+    expect($xml)->toContain('<Gather');
+});
+
+it('IVR forwards call on forward action', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
+    $this->company->update([
+        'settings' => [
+            'ivr' => [
+                'enabled' => true,
+                'business_hours' => [
+                    'greeting' => 'Press 3 for office.',
+                    'options' => ['3' => ['action' => 'forward', 'label' => 'Office', 'forward_to' => '+13035551234']],
+                    'no_input_action' => 'voicemail',
+                ],
+                'after_hours' => ['greeting' => 'Closed.', 'options' => [], 'no_input_action' => 'voicemail'],
+            ],
+        ],
+    ]);
+
+    $contact = Contact::factory()->forCompany($this->company)->create();
+
+    $response = $this->post(route('prospector.webhook.twilio.voice.ivr-response'), [
+        'Digits' => '3', 'company_id' => $this->company->id, 'contact_id' => $contact->id, 'CallSid' => 'CA_forward_1',
+    ]);
+
+    $xml = $response->getContent();
+    expect($xml)->toContain('+13035551234');
+});
+
+it('finds agents via pivot table not just FK', function () {
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
+    $otherCompany = Company::factory()->create();
+    $agent = Agent::factory()->create(['company_id' => $otherCompany->id, 'status' => 'available']);
+    $agent->companies()->attach($this->company->id);
+
+    $response = $this->post($this->inboundUrl, [
+        'To' => '+17205550100', 'From' => '+17205559999', 'CallSid' => 'CA_pivot_agent_1',
+    ]);
+
+    $xml = $response->getContent();
+    expect($xml)->toContain('<Conference');
+});
+
+it('broadcasts InboundCallRinging to all available agents', function () {
+    Event::fake([InboundCallRinging::class]);
+    $this->travelTo(Carbon::parse('2026-04-01 10:00:00', 'America/Denver'));
+
+    $agent1 = Agent::factory()->forCompany($this->company)->available()->create();
+    $agent2 = Agent::factory()->forCompany($this->company)->available()->create();
+    $busyAgent = Agent::factory()->forCompany($this->company)->create(['status' => 'on_call']);
+
+    $this->post($this->inboundUrl, [
+        'To' => '+17205550100', 'From' => '+17205559999', 'CallSid' => 'CA_multi_ring_1',
+    ]);
+
+    Event::assertDispatched(InboundCallRinging::class, function ($event) use ($agent1, $agent2, $busyAgent) {
+        return in_array($agent1->id, $event->agentIds)
+            && in_array($agent2->id, $event->agentIds)
+            && ! in_array($busyAgent->id, $event->agentIds);
+    });
 });
