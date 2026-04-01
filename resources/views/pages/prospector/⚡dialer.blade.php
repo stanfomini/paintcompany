@@ -44,6 +44,7 @@ class extends Component
     public string $callStatus = 'idle'; // idle, ringing, connected, ended
     public ?string $callingFrom = null;
     public ?string $amdResult = null;
+    public bool $inboundRinging = false;
 
     // Parallel dialer state
     public array $parallelLines = []; // [{call_id, contact_name, phone, status}]
@@ -60,6 +61,7 @@ class extends Component
 
     // UI
     public bool $isMuted = false;
+    public bool $autoAnswerInbound = false;
 
     // SMS
     public string $smsBody = '';
@@ -126,6 +128,7 @@ class extends Component
 
         $this->agentId = $agent->id;
         $this->agentStatus = $agent->status;
+        $this->autoAnswerInbound = ($agent->settings['auto_answer_inbound'] ?? false);
 
         if ($agent->status === 'offline') {
             $agent->goAvailable();
@@ -695,6 +698,29 @@ class extends Component
         $this->agentStatus = $status;
     }
 
+    public function toggleAutoAnswer(): void
+    {
+        if (! $this->agentId) {
+            return;
+        }
+        $this->autoAnswerInbound = ! $this->autoAnswerInbound;
+        $agent = Agent::findOrFail($this->agentId);
+        $settings = $agent->settings ?? [];
+        $settings['auto_answer_inbound'] = $this->autoAnswerInbound;
+        $agent->update(['settings' => $settings]);
+    }
+
+    public function answerInbound(): void
+    {
+        $this->dispatch('answer-inbound-call');
+    }
+
+    public function declineInbound(): void
+    {
+        $this->dispatch('decline-inbound-call');
+        $this->resetCallState();
+    }
+
     // ──────────────────────────────────────
     // Call Controls
     // ──────────────────────────────────────
@@ -1129,6 +1155,7 @@ class extends Component
         $this->callStatus = 'connected';
         $this->amdResult = $data['amd_result'] ?? null;
         $this->agentStatus = 'on_call';
+        $this->inboundRinging = false;
 
         // In parallel mode, find and highlight the winning line
         if ($this->dialerMode === 'parallel') {
@@ -1177,6 +1204,8 @@ class extends Component
         $this->activeContact = $data['contact'] ?? null;
         $this->callStatus = 'ringing';
         $this->callingFrom = $data['from_number'] ?? null;
+        $this->agentStatus = 'ringing';
+        $this->inboundRinging = true;
 
         if ($contactId = $data['contact']['id'] ?? null) {
             $this->previewContactId = $contactId;
@@ -1185,9 +1214,10 @@ class extends Component
 
         $this->clearCaches();
 
-        if ($conferenceName = $data['conference_name'] ?? null) {
-            $this->dispatch('join-conference', conferenceName: $conferenceName);
-        }
+        // The agent is dialed into the conference by the Participants API
+        // (triggers device.on('incoming') which handles auto/manual answer).
+        // No need to dispatch join-conference here — that would cause a
+        // duplicate connection and 53000 signaling errors.
     }
 
     public function updatedFilterCompanyId($value): void
@@ -1208,6 +1238,7 @@ class extends Component
         $this->activeCallUlid = null;
         $this->activeContact = null;
         $this->callStatus = 'idle';
+        $this->inboundRinging = false;
         $this->callingFrom = null;
         $this->amdResult = null;
         $this->showDisposition = false;
@@ -1277,7 +1308,7 @@ class extends Component
 
 {{-- Twilio SDK objects stored outside Alpine to avoid Proxy conflicts --}}
 <script>
-    window.__twilio = { device: null, connection: null, companyId: null };
+    window.__twilio = { device: null, connection: null, companyId: null, pendingCall: null };
 </script>
 
 <div
@@ -1380,9 +1411,30 @@ class extends Component
                     this.phoneError = err.message || 'Phone error';
                 });
                 device.on('incoming', (call) => {
-                    call.accept();
-                    window.__twilio.connection = call;
-                    this.connectionDebug = 'Inbound connected';
+                    if ($wire.autoAnswerInbound) {
+                        // Auto-answer: accept immediately
+                        call.accept();
+                        window.__twilio.connection = call;
+                        this.connectionDebug = 'Inbound connected';
+                    } else {
+                        // Manual answer: store pending call, play ring, wait for agent
+                        window.__twilio.pendingCall = call;
+                        this.connectionDebug = 'Inbound ringing — waiting for answer';
+                        try {
+                            this._ringAudio = new Audio('/sounds/new-lead.wav');
+                            this._ringAudio.loop = true;
+                            this._ringAudio.volume = 0.6;
+                            this._ringAudio.play().catch(() => {});
+                        } catch (err) {}
+
+                        // If caller hangs up before agent answers
+                        call.on('cancel', () => {
+                            window.__twilio.pendingCall = null;
+                            this.connectionDebug = null;
+                            if (this._ringAudio) { this._ringAudio.pause(); this._ringAudio = null; }
+                        });
+                        return; // Don't set up connection listeners yet
+                    }
                     call.on('disconnect', () => {
                         window.__twilio.connection = null;
                         this.connectionDebug = null;
@@ -1496,6 +1548,36 @@ class extends Component
             this.$wire.on('dial-error', ({ message }) => {
                 this.phoneError = 'Call failed: ' + message;
                 setTimeout(() => { this.phoneError = null; }, 10000);
+            });
+
+            // Manual answer: agent clicks "Answer" for inbound call
+            this.$wire.on('answer-inbound-call', () => {
+                const pending = window.__twilio.pendingCall;
+                if (pending) {
+                    pending.accept();
+                    window.__twilio.connection = pending;
+                    window.__twilio.pendingCall = null;
+                    this.connectionDebug = 'Inbound connected';
+                    if (this._ringAudio) { this._ringAudio.pause(); this._ringAudio = null; }
+                    pending.on('disconnect', () => {
+                        window.__twilio.connection = null;
+                        this.connectionDebug = null;
+                    });
+                    pending.on('error', (err) => {
+                        this.phoneError = 'Call error: ' + (err.message || err);
+                    });
+                }
+            });
+
+            // Manual decline: agent clicks "Decline" for inbound call
+            this.$wire.on('decline-inbound-call', () => {
+                const pending = window.__twilio.pendingCall;
+                if (pending) {
+                    pending.reject();
+                    window.__twilio.pendingCall = null;
+                    this.connectionDebug = null;
+                    if (this._ringAudio) { this._ringAudio.pause(); this._ringAudio = null; }
+                }
             });
 
             // When dialContact detects the contact's company differs from the active
@@ -2011,6 +2093,15 @@ class extends Component
                             <template x-if="!deviceReady">
                                 <button type="button" x-on:click="initTwilio()" class="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400">Retry</button>
                             </template>
+                            <button
+                                type="button"
+                                wire:click="toggleAutoAnswer"
+                                class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium transition {{ $autoAnswerInbound ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400' }}"
+                                title="{{ $autoAnswerInbound ? 'Auto-answer ON — inbound calls connect automatically' : 'Auto-answer OFF — you must click Answer for inbound calls' }}"
+                            >
+                                <flux:icon name="{{ $autoAnswerInbound ? 'phone-arrow-down-left' : 'bell-alert' }}" class="size-3.5" />
+                                {{ $autoAnswerInbound ? 'Auto' : 'Ring' }}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2049,19 +2140,32 @@ class extends Component
                         @if ($callStatus === 'ringing' && $dialerMode !== 'parallel')
                             {{-- Ringing state --}}
                             <div class="text-center">
-                                <div class="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-                                    <flux:icon name="phone" class="size-7 animate-pulse text-amber-600 dark:text-amber-400" />
+                                <div class="mx-auto mb-3 flex size-14 items-center justify-center rounded-full {{ $inboundRinging ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-amber-100 dark:bg-amber-900/30' }}">
+                                    <flux:icon name="{{ $inboundRinging ? 'phone-arrow-down-left' : 'phone' }}" class="size-7 animate-pulse {{ $inboundRinging ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400' }}" />
                                 </div>
                                 <div class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ $activeContact['name'] ?? 'Unknown' }}</div>
                                 <div class="font-mono text-sm text-zinc-500">{{ $activeContact['phone'] ?? '' }}</div>
                                 <div class="mt-2">
-                                    <flux:badge color="amber">Ringing...</flux:badge>
+                                    @if ($inboundRinging)
+                                        <flux:badge color="blue">Incoming Call</flux:badge>
+                                    @else
+                                        <flux:badge color="amber">Ringing...</flux:badge>
+                                    @endif
                                 </div>
                                 <div class="mt-3 flex justify-center gap-2">
-                                    <flux:button size="sm" variant="danger" icon="phone-x-mark" x-on:click="hangUp()">
-                                        Hang Up
-                                    </flux:button>
-                                    <flux:button size="sm" variant="ghost" icon="forward" wire:click="skipContact">Skip</flux:button>
+                                    @if ($inboundRinging && ! $autoAnswerInbound)
+                                        <flux:button size="sm" variant="primary" icon="phone" wire:click="answerInbound" class="!bg-green-600 hover:!bg-green-700">
+                                            Answer
+                                        </flux:button>
+                                        <flux:button size="sm" variant="danger" icon="phone-x-mark" wire:click="declineInbound">
+                                            Decline
+                                        </flux:button>
+                                    @else
+                                        <flux:button size="sm" variant="danger" icon="phone-x-mark" x-on:click="hangUp()">
+                                            Hang Up
+                                        </flux:button>
+                                        <flux:button size="sm" variant="ghost" icon="forward" wire:click="skipContact">Skip</flux:button>
+                                    @endif
                                 </div>
                             </div>
                         @elseif ($callStatus === 'connected')
