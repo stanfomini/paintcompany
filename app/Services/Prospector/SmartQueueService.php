@@ -32,14 +32,14 @@ class SmartQueueService
         $companyIds = $companyId ? [$companyId] : $agent->getCompanyIds();
 
         $query = Contact::query()
-            ->whereIn('company_id', $companyIds)
-            ->where('do_not_call', false)
-            ->whereNotNull('pipeline_stage_id')
-            ->where(fn ($q) => $q->whereNull('claimed_by_agent_id')->orWhere('claimed_by_agent_id', $agent->id))
+            ->whereIn('prospector_contacts.company_id', $companyIds)
+            ->where('prospector_contacts.do_not_call', false)
+            ->whereNotNull('prospector_contacts.pipeline_stage_id')
+            ->where(fn ($q) => $q->whereNull('prospector_contacts.claimed_by_agent_id')->orWhere('prospector_contacts.claimed_by_agent_id', $agent->id))
             ->with(['company', 'pipelineStage']);
 
         if ($pipelineStageId) {
-            $query->where('pipeline_stage_id', $pipelineStageId);
+            $query->where('prospector_contacts.pipeline_stage_id', $pipelineStageId);
         }
 
         if ($search) {
@@ -50,8 +50,11 @@ class SmartQueueService
         $oneDayAgo = now()->subDay()->toDateTimeString();
         $fifteenMinAgo = now()->subMinutes(15)->toDateTimeString();
 
+        // Join pipeline stages to get sort_order for secondary sorting
+        $query->leftJoin('prospector_pipeline_stages', 'prospector_contacts.pipeline_stage_id', '=', 'prospector_pipeline_stages.id');
+
         // Compute priority tier as a sortable value using DB-agnostic approach
-        $query->selectRaw('prospector_contacts.*, (
+        $query->selectRaw('prospector_contacts.*, prospector_pipeline_stages.sort_order as stage_sort_order, (
             CASE
                 WHEN EXISTS (
                     SELECT 1 FROM prospector_calls
@@ -83,7 +86,8 @@ class SmartQueueService
 
         return $query
             ->orderBy('queue_priority')
-            ->orderBy('last_contacted_at')
+            ->orderBy('stage_sort_order')
+            ->orderBy('prospector_contacts.last_contacted_at')
             ->limit($limit)
             ->get();
     }
@@ -147,8 +151,10 @@ class SmartQueueService
                 'phone' => $c->getDisplayPhone(),
                 'company_id' => $c->company_id,
                 'company_name' => $c->company?->name ?? '',
+                'company_color' => $c->company?->color ?? '#6B7280',
                 'pipeline_stage_id' => $c->pipeline_stage_id,
                 'pipeline_stage_name' => $c->pipelineStage?->name ?? '',
+                'stage_sort_order' => (int) ($c->stage_sort_order ?? 99),
                 'queue_priority' => (int) $c->queue_priority,
                 'has_unread_sms' => (bool) $c->has_unread_sms,
                 'follow_up_at' => $c->follow_up_at?->toISOString(),
