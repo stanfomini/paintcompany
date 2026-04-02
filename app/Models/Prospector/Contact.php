@@ -63,9 +63,15 @@ class Contact extends Model
 
     protected static function booted(): void
     {
-        static::creating(function (Contact $model) {
-            if (empty($model->ulid)) {
-                $model->ulid = Str::ulid()->toBase32();
+        static::creating(function (Contact $contact) {
+            if (empty($contact->ulid)) {
+                $contact->ulid = Str::ulid()->toBase32();
+            }
+
+            if (empty($contact->timezone) && $contact->phone) {
+                $areaCode = $contact->getAreaCode();
+                $timezones = config('prospector-timezones');
+                $contact->timezone = $timezones[$areaCode] ?? null;
             }
         });
     }
