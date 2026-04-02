@@ -34,6 +34,9 @@ class extends Component
     public string $contactSearch = '';
     public array $selectedContacts = [];
 
+    // Disposition routing
+    public array $dispositionRoutes = [];
+
     // Bulk actions
     public array $selectedQueueItems = [];
     public bool $selectAll = false;
@@ -54,6 +57,9 @@ class extends Component
     {
         $this->campaignId = $campaignId;
         $campaign = Campaign::findOrFail($campaignId);
+
+        // Hydrate disposition routes
+        $this->dispositionRoutes = $campaign->disposition_routes ?? Campaign::defaultDispositionRoutes();
 
         // Hydrate call rule fields
         $this->maxCallsPerDay = $campaign->max_calls_per_day ?? 3;
@@ -84,6 +90,56 @@ class extends Component
             'auto_dial' => $this->autoDial,
         ]);
 
+        $this->clearCaches();
+    }
+
+    public function saveDispositionRoutes(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $campaign = Campaign::findOrFail($this->campaignId);
+        $campaign->update(['disposition_routes' => $this->dispositionRoutes]);
+        $this->clearCaches();
+    }
+
+    public function updateDispositionRoute(string $disposition, string $action, ?int $targetCampaignId = null): void
+    {
+        $this->dispositionRoutes[$disposition] = array_filter([
+            'action' => $action,
+            'target_campaign_id' => $action === 'move' ? $targetCampaignId : null,
+        ]);
+        $this->saveDispositionRoutes();
+    }
+
+    public function addAllCompanyContacts(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $campaign = Campaign::findOrFail($this->campaignId);
+        $existingContactIds = CampaignContact::where('campaign_id', $this->campaignId)->pluck('contact_id');
+        $maxSort = CampaignContact::where('campaign_id', $this->campaignId)->max('sort_order') ?? 0;
+
+        $contacts = Contact::where('company_id', $campaign->company_id)
+            ->where('do_not_call', false)
+            ->whereNotIn('id', $existingContactIds)
+            ->get();
+
+        foreach ($contacts as $index => $contact) {
+            CampaignContact::create([
+                'campaign_id' => $this->campaignId,
+                'contact_id' => $contact->id,
+                'status' => 'queued',
+                'sort_order' => $maxSort + $index + 1,
+                'attempts' => 0,
+                'added_at' => now(),
+            ]);
+        }
+
+        $campaign->refreshContactCount();
         $this->clearCaches();
     }
 
@@ -633,6 +689,53 @@ class extends Component
         </div>
     </div>
 
+    {{-- Disposition Routing --}}
+    <div class="mb-6 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800" x-data="{ open: false }">
+        <button x-on:click="open = !open" class="flex w-full items-center justify-between px-5 py-4 text-left">
+            <div class="flex items-center gap-2">
+                <flux:icon name="arrows-right-left" variant="mini" class="text-zinc-400" />
+                <flux:heading size="sm">{{ __('Disposition Routing') }}</flux:heading>
+                <flux:text class="text-zinc-400">{{ __('What happens after each call outcome') }}</flux:text>
+            </div>
+            <flux:icon name="chevron-down" variant="mini" class="text-zinc-400 transition" ::class="open && 'rotate-180'" />
+        </button>
+
+        <div x-show="open" x-collapse class="border-t border-zinc-200 px-5 pb-5 pt-4 dark:border-zinc-700">
+            <div class="space-y-3">
+                @foreach(config('prospector.dispositions', []) as $key => $config)
+                    @php
+                        $route = $dispositionRoutes[$key] ?? ['action' => 'stay'];
+                        $action = $route['action'] ?? 'stay';
+                        $targetId = $route['target_campaign_id'] ?? null;
+                    @endphp
+                    <div class="flex items-center gap-3" wire:key="route-{{ $key }}">
+                        <div class="w-36 text-sm font-medium">{{ $config['label'] ?? ucfirst(str_replace('_', ' ', $key)) }}</div>
+                        <select
+                            class="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                            wire:change="updateDispositionRoute('{{ $key }}', $event.target.value)"
+                        >
+                            <option value="stay" @selected($action === 'stay')>Stay in campaign</option>
+                            <option value="move" @selected($action === 'move')>Move to campaign</option>
+                            <option value="remove" @selected($action === 'remove')>Remove (complete)</option>
+                            <option value="dnc" @selected($action === 'dnc')>Do Not Call</option>
+                        </select>
+                        @if($action === 'move')
+                            <select
+                                class="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                                wire:change="updateDispositionRoute('{{ $key }}', 'move', $event.target.value)"
+                            >
+                                <option value="">Select campaign...</option>
+                                @foreach($this->otherCampaigns as $camp)
+                                    <option value="{{ $camp->id }}" @selected($targetId == $camp->id)>{{ $camp->name }}</option>
+                                @endforeach
+                            </select>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    </div>
+
     {{-- Toolbar: Filter + Add Contacts + Bulk Actions --}}
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
@@ -658,9 +761,15 @@ class extends Component
             @endif
         </div>
 
-        <flux:button variant="primary" icon="plus" wire:click="openAddContacts">
-            {{ __('Add Contacts') }}
-        </flux:button>
+        <div class="flex items-center gap-2">
+            <flux:button variant="filled" icon="users" wire:click="addAllCompanyContacts"
+                wire:confirm="{{ __('Add all company contacts to this campaign?') }}">
+                {{ __('Add All Contacts') }}
+            </flux:button>
+            <flux:button variant="primary" icon="plus" wire:click="openAddContacts">
+                {{ __('Add Contacts') }}
+            </flux:button>
+        </div>
     </div>
 
     {{-- Contact Queue Table --}}

@@ -19,7 +19,6 @@ use App\Services\Prospector\DialerOrchestrationService;
 use App\Services\Prospector\PowerDialerService;
 use App\Services\Prospector\ProspectorSmsService;
 use App\Services\Prospector\RvmService;
-use App\Services\Prospector\SmartQueueService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -33,7 +32,6 @@ class extends Component
 {
     // Queue filters
     public ?int $filterCompanyId = null;
-    public ?int $filterStageId = null;
     public string $queueSearch = '';
     public string $dialerMode = 'single'; // single, parallel
 
@@ -136,13 +134,7 @@ class extends Component
             $this->agentStatus = 'available';
         }
 
-        // Auto-preview first queue item
-        $smartQueue = app(SmartQueueService::class);
-        $first = $smartQueue->getNext($agent);
-        if ($first) {
-            $this->previewContactId = $first->id;
-            $this->loadContactState($first->id);
-        }
+        // No auto-preview on mount — queue is campaign-driven
     }
 
     #[Computed]
@@ -198,17 +190,22 @@ class extends Component
     #[Computed]
     public function queueContacts(): \Illuminate\Support\Collection
     {
-        if (! $this->agent) {
+        if (! $this->selectedCampaignId) {
             return collect();
         }
 
-        return app(SmartQueueService::class)->getQueue(
-            agent: $this->agent,
-            companyId: $this->filterCompanyId,
-            pipelineStageId: $this->filterStageId,
-            search: $this->queueSearch ?: null,
-            limit: 50,
-        );
+        $campaign = Campaign::find($this->selectedCampaignId);
+
+        if (! $campaign) {
+            return collect();
+        }
+
+        return \App\Models\Prospector\CampaignContact::where('campaign_id', $campaign->id)
+            ->where('status', 'queued')
+            ->with('contact')
+            ->orderBy('sort_order')
+            ->limit(50)
+            ->get();
     }
 
     #[Computed]
@@ -218,27 +215,8 @@ class extends Component
     }
 
     /**
-     * Return the full queue as a JSON-serializable array.
-     * Called by Alpine on mount and every 30s for background sync.
-     */
-    public function syncQueue(): array
-    {
-        if (! $this->agent) {
-            return [];
-        }
-
-        return app(SmartQueueService::class)->getQueueAsArray(
-            agent: $this->agent,
-            companyId: $this->filterCompanyId,
-            pipelineStageId: null, // Stage filtering is client-side
-            search: $this->queueSearch ?: null,
-            limit: 50,
-        );
-    }
-
-    /**
      * Return the campaign-driven queue as a JSON-serializable array.
-     * Called by Alpine when a dialer session is active.
+     * Called by Alpine to populate the queue cards.
      */
     public function syncCampaignQueue(): array
     {
@@ -519,12 +497,6 @@ class extends Component
 
         $this->clearCaches();
         $this->dispatch('queue-reload');
-
-        // Auto-advance to next contact
-        $next = app(SmartQueueService::class)->getNext($this->agent);
-        if ($next && $next->id !== $contactId) {
-            $this->previewContact($next->id);
-        }
     }
 
     public function setFollowUp(?string $date): void
@@ -857,17 +829,6 @@ class extends Component
     public function skipContact(): void
     {
         $this->resetCallState();
-
-        // Auto-preview next contact without dialing
-        $agent = Agent::findOrFail($this->agentId);
-        $smartQueue = app(SmartQueueService::class);
-        $next = $smartQueue->getNext($agent, $this->filterCompanyId);
-
-        if ($next) {
-            $this->previewContactId = $next->id;
-            $this->loadContactState($next->id);
-        }
-
         $this->clearCaches();
     }
 
@@ -1323,29 +1284,14 @@ class extends Component
 
         // Queue state
         queueItems: [],
-        queueFilter: 'all',
         syncInterval: null,
 
         async loadQueue() {
-            if ($wire.activeSessionId && $wire.selectedCampaignId) {
+            if ($wire.selectedCampaignId) {
                 this.queueItems = await $wire.syncCampaignQueue();
             } else {
-                this.queueItems = await $wire.syncQueue();
+                this.queueItems = [];
             }
-        },
-
-        get filteredQueue() {
-            if (this.queueFilter === 'all') return this.queueItems;
-            return this.queueItems.filter(c => String(c.pipeline_stage_id) === String(this.queueFilter));
-        },
-
-        get stageCounts() {
-            const counts = { all: this.queueItems.length };
-            this.queueItems.forEach(c => {
-                const key = String(c.pipeline_stage_id);
-                counts[key] = (counts[key] || 0) + 1;
-            });
-            return counts;
         },
 
         removeFromQueue(contactId) {
@@ -1700,10 +1646,10 @@ class extends Component
                     </div>
                 </template>
                 <div x-show="queueItems.length === 0" class="py-3 text-xs text-zinc-400">
-                    <template x-if="sessionState === 'idle'">
-                        <span>Start a session to load contacts</span>
+                    <template x-if="!$wire.selectedCampaignId">
+                        <span>Select a campaign to see the queue</span>
                     </template>
-                    <template x-if="sessionState !== 'idle'">
+                    <template x-if="$wire.selectedCampaignId">
                         <span>No contacts in queue</span>
                     </template>
                 </div>
