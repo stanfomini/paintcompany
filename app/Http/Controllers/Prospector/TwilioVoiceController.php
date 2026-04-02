@@ -300,7 +300,14 @@ class TwilioVoiceController extends Controller
             return $this->noAgentTwiml($company);
         }
 
-        $conferenceName = 'inbound-'.Str::ulid();
+        // Check if the agent has an active dialer session — route into their persistent conference
+        $activeSession = \App\Models\Prospector\DialerSession::where('agent_id', $agents->first()->id)
+            ->where('status', 'active')
+            ->first();
+
+        $conferenceName = ($activeSession && $activeSession->conference_name)
+            ? $activeSession->conference_name
+            : 'inbound-'.Str::ulid();
 
         $call = Call::create([
             'company_id' => $company->id,
