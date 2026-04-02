@@ -91,6 +91,14 @@ window.loadSoftphone = async () => {
     return window._softphoneModule;
 };
 
+window.loadDialerSession = async () => {
+    if (!window._dialerSessionModule) {
+        const module = await import('./dialer-session.js');
+        window._dialerSessionModule = module.default;
+    }
+    return window._dialerSessionModule;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
