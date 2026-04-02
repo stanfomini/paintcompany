@@ -248,8 +248,8 @@
                     <flux:sidebar.item icon="phone" :href="route('prospector.dialer')" :current="request()->routeIs('prospector.dialer')" wire:navigate>
                         {{ __('Dialer') }}
                     </flux:sidebar.item>
-                    <flux:sidebar.item icon="view-columns" :href="route('prospector.pipeline-view')" :current="request()->routeIs('prospector.pipeline-view')" wire:navigate>
-                        {{ __('Pipeline') }}
+                    <flux:sidebar.item icon="list-bullet" :href="route('prospector.pipeline-view')" :current="request()->routeIs('prospector.pipeline-view')" wire:navigate>
+                        {{ __('Lists') }}
                     </flux:sidebar.item>
                     <flux:sidebar.item icon="users" :href="route('prospector.contacts')" :current="request()->routeIs('prospector.contacts')" wire:navigate>
                         {{ __('Contacts') }}
