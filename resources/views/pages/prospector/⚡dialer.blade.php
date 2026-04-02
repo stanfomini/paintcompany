@@ -3,15 +3,19 @@
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\CallScript;
+use App\Models\Prospector\Campaign;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\CompanyBookingLink;
 use App\Models\Prospector\Contact;
 use App\Models\Prospector\ContactNote;
+use App\Models\Prospector\DialerSession;
 use App\Models\Prospector\PipelineStage;
 use App\Models\Prospector\RvmTemplate;
 use App\Models\Prospector\SmsMessage;
 use App\Services\Prospector\AgentStateService;
+use App\Services\Prospector\CampaignQueueService;
 use App\Services\Prospector\ConferenceService;
+use App\Services\Prospector\DialerOrchestrationService;
 use App\Services\Prospector\PowerDialerService;
 use App\Services\Prospector\ProspectorSmsService;
 use App\Services\Prospector\RvmService;
@@ -53,6 +57,10 @@ class extends Component
     // Agent
     public ?int $agentId = null;
     public string $agentStatus = 'offline';
+
+    // Session (persistent conference)
+    public ?int $activeSessionId = null;
+    public ?int $selectedCampaignId = null;
 
     // UI
     public bool $isMuted = false;
@@ -160,6 +168,21 @@ class extends Component
             ->get();
     }
 
+    #[Computed]
+    public function agentCampaigns(): \Illuminate\Support\Collection
+    {
+        if (! $this->agent) {
+            return collect();
+        }
+
+        $companyIds = $this->agent->getCompanyIds();
+
+        return Campaign::whereIn('company_id', $companyIds)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+    }
+
     /**
      * Return all company IDs the agent is assigned to (for Alpine Echo subscriptions).
      */
@@ -211,6 +234,24 @@ class extends Component
             search: $this->queueSearch ?: null,
             limit: 50,
         );
+    }
+
+    /**
+     * Return the campaign-driven queue as a JSON-serializable array.
+     * Called by Alpine when a dialer session is active.
+     */
+    public function syncCampaignQueue(): array
+    {
+        if (! $this->selectedCampaignId || ! $this->agent) {
+            return [];
+        }
+
+        $campaign = Campaign::find($this->selectedCampaignId);
+        if (! $campaign) {
+            return [];
+        }
+
+        return app(CampaignQueueService::class)->getQueueAsArray($campaign, $this->agent);
     }
 
     #[Computed]
@@ -674,134 +715,119 @@ class extends Component
     // Call Controls
     // ──────────────────────────────────────
 
-    public function dialNext(): array
+    // ──────────────────────────────────────
+    // Session Management (Persistent Conference)
+    // ──────────────────────────────────────
+
+    public function startDialerSession(int $campaignId): array
     {
         if (! $this->agent) {
             return ['error' => 'No agent'];
         }
 
-        $agent = Agent::findOrFail($this->agentId);
-        $smartQueue = app(SmartQueueService::class);
-        $contact = $smartQueue->getNext($agent, $this->filterCompanyId);
-
-        if (! $contact) {
-            return ['error' => 'No contacts available in queue'];
+        $campaign = Campaign::where('id', $campaignId)->where('status', 'active')->first();
+        if (! $campaign) {
+            return ['error' => 'Campaign not found or not active'];
         }
 
-        if (! $smartQueue->claim($contact, $agent)) {
-            return ['error' => 'Contact was claimed by another agent'];
-        }
+        $service = app(DialerOrchestrationService::class);
+        $session = $service->startSession($this->agent, $campaign);
 
-        $contact->load('company.twilioAccount');
-        $company = $contact->company;
-
-        if (! $company) {
-            return ['error' => 'Contact has no company'];
-        }
-
-        // Select phone number
-        $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
-
-        try {
-            $fromNumber = $numberService->selectNumber($company, $contact, null);
-        } catch (\RuntimeException $e) {
-            $this->dispatch('dial-error', message: $e->getMessage());
-
-            return ['error' => $e->getMessage()];
-        }
-
-        $conferenceName = 'call-'.\Illuminate\Support\Str::ulid();
-
-        // Create Call record
-        $call = Call::create([
-            'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
-            'company_id' => $company->id,
-            'agent_id' => $agent->id,
-            'contact_id' => $contact->id,
-            'from_phone_number_id' => $fromNumber->id,
-            'from_number' => $fromNumber->getEffectiveCallerId(),
-            'to_number' => $contact->phone,
-            'direction' => 'outbound',
-            'status' => 'ringing',
-            'started_at' => now(),
-            'twilio_conference_sid' => $conferenceName,
-        ]);
-
-        $this->setActiveCallFromCall($call->load('contact'));
-        $this->agentStatus = 'ringing';
-        $this->showDisposition = false;
-        $this->clearCaches();
+        $this->activeSessionId = $session->id;
+        $this->selectedCampaignId = $campaign->id;
+        $this->agentStatus = 'available';
 
         return [
-            'phone' => $contact->phone,
-            'contactId' => $contact->id,
-            'companyId' => $company->id,
-            'conferenceName' => $conferenceName,
+            'sessionId' => $session->id,
+            'conferenceName' => $session->conference_name,
         ];
     }
 
-    public function dialContactIntoConference(int $contactId, string $conferenceName): array
+    public function endDialerSession(): void
     {
-        if (! $this->agent) {
-            return ['error' => 'No agent'];
+        if (! $this->activeSessionId) {
+            return;
         }
 
-        // Find the Call record created in dialContact/dialNext
-        $call = Call::where('twilio_conference_sid', $conferenceName)->first();
-
-        if (! $call) {
-            return ['error' => 'Call not found'];
+        $session = DialerSession::find($this->activeSessionId);
+        if ($session) {
+            app(DialerOrchestrationService::class)->endSession($session);
         }
 
-        // Guard: already dialed (idempotent — protects against double-fires)
-        if ($call->twilio_call_sid) {
-            return ['success' => true, 'callId' => $call->id];
+        $this->activeSessionId = null;
+        $this->agentStatus = 'offline';
+        $this->resetCallState();
+    }
+
+    public function pauseDialerSession(): void
+    {
+        if (! $this->activeSessionId) {
+            return;
         }
 
-        $contact = Contact::with('company.twilioAccount')->find($contactId);
+        $session = DialerSession::find($this->activeSessionId);
+        if ($session) {
+            app(DialerOrchestrationService::class)->pauseSession($session);
+        }
+    }
 
-        if (! $contact) {
-            return ['error' => 'Contact not found'];
+    public function resumeDialerSession(): void
+    {
+        if (! $this->activeSessionId) {
+            return;
         }
 
-        $fromNumber = $call->fromPhoneNumber;
+        $session = DialerSession::find($this->activeSessionId);
+        if ($session) {
+            app(DialerOrchestrationService::class)->resumeSession($session);
+        }
+    }
 
-        if (! $fromNumber) {
-            return ['error' => 'No phone number on call record'];
+    public function dialNextFromSession(): array
+    {
+        if (! $this->activeSessionId) {
+            return ['error' => 'No active session'];
         }
 
-        $agent = Agent::findOrFail($this->agentId);
+        $session = DialerSession::with('campaign')->find($this->activeSessionId);
+        if (! $session || ! $session->isActive()) {
+            return ['error' => 'Session not active'];
+        }
 
+        $service = app(DialerOrchestrationService::class);
+        $target = $service->getNextDialTarget($session);
+
+        if (! $target) {
+            return ['error' => 'queue_empty'];
+        }
+
+        $contact = $target['contact'];
+        $fromNumber = $target['fromNumber'];
+        $cc = $target['campaignContact'];
+
+        // Record the attempt (creates Call record, updates counters)
+        $call = $service->recordDialAttempt($session, $contact, $cc, $fromNumber);
+
+        // Set UI state
+        $this->setActiveCallFromCall($call->load('contact'));
+        $this->agentStatus = 'ringing';
+        $this->showDisposition = false;
+
+        // Actually dial the contact into the conference
         try {
-            $amdParams = [];
-            if (config('prospector.defaults.amd_enabled')) {
-                $amdParams = app(\App\Services\Prospector\AmdService::class)->getAmdParams();
-            }
-
-            $conferenceService = app(ConferenceService::class);
-            $callSid = $conferenceService->dialContactIntoConference(
-                $conferenceName,
-                $contact,
-                $fromNumber,
-                $amdParams,
-            );
-
-            $call->update(['twilio_call_sid' => $callSid]);
+            $service->dialContactIntoConference($session, $contact, $fromNumber, $call);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('dialContactIntoConference failed', [
-                'call_id' => $call->id,
-                'error' => $e->getMessage(),
-            ]);
             $call->markFailed();
 
             return ['error' => 'Failed to dial: '.$e->getMessage()];
         }
 
-        // Broadcast ringing event
-        broadcast(new \App\Events\Prospector\DialerCallRinging($call, $agent->id));
-        app(AgentStateService::class)->setStatus($agent, 'ringing');
+        $this->clearCaches();
 
-        return ['success' => true, 'callId' => $call->id];
+        return [
+            'contactId' => $contact->id,
+            'callId' => $call->id,
+        ];
     }
 
     private function setActiveCallFromCall(Call $call): void
@@ -852,39 +878,18 @@ class extends Component
         }
 
         $call = Call::findOrFail($this->activeCallId);
-        $service = app(PowerDialerService::class);
+
+        if ($callbackAt) {
+            $call->update(['callback_at' => $callbackAt]);
+        }
+
+        $service = app(DialerOrchestrationService::class);
         $service->dispositionCall($call, $disposition, $this->dispositionNotes ?: null);
 
-        // Handle callback scheduling
-        if ($disposition === 'callback' && $callbackAt) {
-            $contactId = $this->activeContact['id'] ?? null;
-
-            if ($contactId) {
-                Contact::where('id', $contactId)->update([
-                    'follow_up_at' => $callbackAt,
-                ]);
-            }
-        }
-
-        $this->resetCallState();
-        $this->agentStatus = 'wrap_up';
         $this->dispositionNotes = '';
-        $this->callbackDate = null;
-        $this->parallelLines = [];
-        $this->connectedLineIndex = null;
+        $this->resetCallState();
         $this->clearCaches();
-
-        // Auto-preview next contact (agent clicks Dial Next to actually call)
-        if ($this->agentStatus !== 'offline') {
-            $agent = Agent::findOrFail($this->agentId);
-            $smartQueue = app(SmartQueueService::class);
-            $next = $smartQueue->getNext($agent, $this->filterCompanyId);
-
-            if ($next) {
-                $this->previewContactId = $next->id;
-                $this->loadContactState($next->id);
-            }
-        }
+        $this->dispatch('queue-reload');
     }
 
     // ──────────────────────────────────────
@@ -1242,6 +1247,7 @@ class extends Component
         unset(
             $this->agent,
             $this->campaigns,
+            $this->agentCampaigns,
             $this->assignedCompanies,
             $this->queueContacts,
             $this->queuedCount,
