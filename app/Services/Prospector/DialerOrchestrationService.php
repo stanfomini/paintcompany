@@ -331,11 +331,6 @@ class DialerOrchestrationService
         // Update Contact
         $call->contact->markContacted($disposition);
 
-        // DNC
-        if ($disposition === 'dnc') {
-            $call->contact->update(['do_not_call' => true]);
-        }
-
         if (! $call->campaign_id) {
             return;
         }
@@ -348,13 +343,40 @@ class DialerOrchestrationService
             // Release claim
             $this->queueService->release($entry);
 
-            // Determine next status
+            // Always schedule callback follow-up when disposition is callback
             if ($disposition === 'callback') {
                 $entry->markCallbackScheduled();
-            } elseif ($entry->isExhausted($call->campaign)) {
-                $entry->exhaust();
-            } else {
-                $entry->markCompleted($disposition);
+            }
+
+            // Get the routing action for this disposition
+            $route = $call->campaign->getDispositionRoute($disposition);
+
+            switch ($route['action']) {
+                case 'stay':
+                    // Re-queue the contact for more calls (unless it's a callback, already handled)
+                    if ($disposition !== 'callback') {
+                        $entry->update(['status' => 'queued']);
+                    }
+                    break;
+
+                case 'move':
+                    $entry->exhaust();
+                    if (! empty($route['target_campaign_id'])) {
+                        CampaignContact::firstOrCreate(
+                            ['campaign_id' => $route['target_campaign_id'], 'contact_id' => $entry->contact_id],
+                            ['status' => 'queued', 'calls_today' => 0, 'total_attempts' => 0, 'entered_at' => now(), 'sort_order' => 0, 'attempts' => 0],
+                        );
+                    }
+                    break;
+
+                case 'remove':
+                    $entry->update(['status' => 'completed']);
+                    break;
+
+                case 'dnc':
+                    $entry->update(['status' => 'completed']);
+                    $call->contact->update(['do_not_call' => true]);
+                    break;
             }
         }
 

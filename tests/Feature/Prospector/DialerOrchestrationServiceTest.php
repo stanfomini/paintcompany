@@ -252,7 +252,7 @@ it('marks call as in_progress and sets agent on_call when answered', function ()
 // disposition
 // ──────────────────────────────────────
 
-it('dispositions a call and marks the campaign contact completed', function () {
+it('dispositions a call and re-queues the campaign contact when no route configured (stay default)', function () {
     Event::fake([DialerCallRinging::class, DialerCallConnected::class, DialerCallEnded::class, ContactDispositioned::class]);
 
     $this->entry->update(['status' => 'dialing', 'calls_today' => 1, 'total_attempts' => 1, 'claimed_by_agent_id' => $this->agent->id]);
@@ -269,7 +269,8 @@ it('dispositions a call and marks the campaign contact completed', function () {
 
     expect($call->fresh()->disposition)->toBe('connected');
     expect($call->fresh()->status)->toBe('completed');
-    expect($this->entry->fresh()->status)->toBe('completed');
+    // 'connected' has no explicit route, defaults to 'stay' — contact is re-queued
+    expect($this->entry->fresh()->status)->toBe('queued');
     expect($this->entry->fresh()->claimed_by_agent_id)->toBeNull();
     expect($this->campaign->fresh()->calls_attempted)->toBe(1);
     expect($this->campaign->fresh()->calls_connected)->toBe(1);
@@ -330,18 +331,23 @@ it('does not increment calls_connected for no_answer disposition', function () {
 // Next-campaign advancement
 // ──────────────────────────────────────
 
-it('enrolls an exhausted contact in the next campaign', function () {
+it('enrolls contact in next campaign when disposition has a move route configured', function () {
     // Create next campaign BEFORE Event::fake
     $nextCampaign = Campaign::factory()->active()->create([
         'company_id' => $this->company->id,
     ]);
-    $this->campaign->update(['next_campaign_id' => $nextCampaign->id]);
 
-    // Set this entry to the exhaustion threshold
+    // Configure a move route for no_answer → next campaign
+    $this->campaign->update([
+        'disposition_routes' => [
+            'no_answer' => ['action' => 'move', 'target_campaign_id' => $nextCampaign->id],
+        ],
+    ]);
+
     $this->entry->update([
         'status' => 'dialing',
         'calls_today' => 0,
-        'total_attempts' => 10, // = max_total_attempts
+        'total_attempts' => 1,
         'entered_at' => now(),
     ]);
 

@@ -42,6 +42,7 @@ class Campaign extends Model
         'calling_hours_start',
         'calling_hours_end',
         'auto_dial',
+        'disposition_routes',
     ];
 
     protected function casts(): array
@@ -55,6 +56,7 @@ class Campaign extends Model
             'calls_connected' => 'integer',
             'auto_vm_drop' => 'boolean',
             'auto_dial' => 'boolean',
+            'disposition_routes' => 'array',
         ];
     }
 
@@ -179,6 +181,43 @@ class Campaign extends Model
         $this->update([
             'contact_count' => $this->contacts()->count(),
         ]);
+    }
+
+    /**
+     * Get the routing action for a given disposition.
+     */
+    public function getDispositionRoute(string $disposition): array
+    {
+        $routes = $this->disposition_routes ?? [];
+        $route = $routes[$disposition] ?? null;
+
+        if (! $route) {
+            return match ($disposition) {
+                'dnc' => ['action' => 'dnc'],
+                'booked' => ['action' => 'remove'],
+                'wrong_number' => ['action' => 'remove'],
+                default => ['action' => 'stay'],
+            };
+        }
+
+        return $route;
+    }
+
+    public static function defaultDispositionRoutes(): array
+    {
+        $dispositions = config('prospector.dispositions', []);
+        $routes = [];
+
+        foreach ($dispositions as $key => $config) {
+            $routes[$key] = match ($key) {
+                'dnc' => ['action' => 'dnc'],
+                'booked' => ['action' => 'remove'],
+                'wrong_number' => ['action' => 'remove'],
+                default => ['action' => 'stay'],
+            };
+        }
+
+        return $routes;
     }
 
     public function isContactCallable(\App\Models\Prospector\Contact $contact): bool
