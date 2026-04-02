@@ -55,12 +55,7 @@ class TwilioSyncService
                     'phone_number' => $number->phoneNumber,
                     'friendly_name' => $number->friendlyName,
                     'area_code' => $areaCode,
-                    'capabilities' => [
-                        'voice' => $number->capabilities->voice ?? false,
-                        'sms' => $number->capabilities->sms ?? false,
-                        'mms' => $number->capabilities->mms ?? false,
-                        'fax' => $number->capabilities->fax ?? false,
-                    ],
+                    'capabilities' => $this->normalizeCapabilities($number->capabilities),
                     'is_active' => true,
                 ]
             );
@@ -140,12 +135,7 @@ class TwilioSyncService
                 'phone_number' => $number->phoneNumber,
                 'friendly_name' => $number->friendlyName,
                 'area_code' => $areaCode,
-                'capabilities' => [
-                    'voice' => $number->capabilities['voice'] ?? false,
-                    'sms' => $number->capabilities['sms'] ?? false,
-                    'mms' => $number->capabilities['mms'] ?? false,
-                    'fax' => $number->capabilities['fax'] ?? false,
-                ],
+                'capabilities' => $this->normalizeCapabilities($number->capabilities),
                 'is_active' => true,
             ]
         );
@@ -182,6 +172,26 @@ class TwilioSyncService
         $number->update(['is_active' => true]);
 
         return $number->refresh();
+    }
+
+    /**
+     * Normalize Twilio capabilities to a consistent array.
+     *
+     * The real Twilio SDK returns an object; tests may pass a plain PHP array.
+     *
+     * @param  object|array<string, bool>  $capabilities
+     * @return array{voice: bool, sms: bool, mms: bool, fax: bool}
+     */
+    private function normalizeCapabilities(object|array $capabilities): array
+    {
+        $caps = is_array($capabilities) ? $capabilities : (array) $capabilities;
+
+        return [
+            'voice' => (bool) ($caps['voice'] ?? false),
+            'sms' => (bool) ($caps['sms'] ?? false),
+            'mms' => (bool) ($caps['mms'] ?? false),
+            'fax' => (bool) ($caps['fax'] ?? false),
+        ];
     }
 
     /**

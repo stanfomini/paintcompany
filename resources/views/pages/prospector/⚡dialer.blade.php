@@ -881,6 +881,10 @@ class extends Component
 
         if ($callbackAt) {
             $call->update(['callback_at' => $callbackAt]);
+
+            if ($disposition === 'callback') {
+                $call->contact()->update(['follow_up_at' => $callbackAt]);
+            }
         }
 
         $service = app(DialerOrchestrationService::class);
@@ -1305,19 +1309,29 @@ class extends Component
         phoneState: 'idle',
         phoneCompanyId: null,
 
-        // Stage 4 UI state
+        // Session state
+        sessionState: 'idle', // idle, starting, ready, dialing, on_call, disposition
+        sessionError: null,
+        autoDial: false,
+        dialerSession: null,
+
+        // UI state
         showDtmf: false,
         showManualDial: false,
         showCallbackPicker: false,
         showScript: true,
 
-        // Smart Queue state
+        // Queue state
         queueItems: [],
         queueFilter: 'all',
         syncInterval: null,
 
         async loadQueue() {
-            this.queueItems = await $wire.syncQueue();
+            if ($wire.activeSessionId && $wire.selectedCampaignId) {
+                this.queueItems = await $wire.syncCampaignQueue();
+            } else {
+                this.queueItems = await $wire.syncQueue();
+            }
         },
 
         get filteredQueue() {
@@ -1356,7 +1370,19 @@ class extends Component
             return m + ':' + s;
         },
 
-        async initPhone() {
+        get sessionStatusText() {
+            switch (this.sessionState) {
+                case 'idle': return 'Select a campaign and press Start';
+                case 'starting': return 'Connecting...';
+                case 'ready': return this.autoDial ? `Auto-dialing · ${this.queueItems.length} remaining` : 'Paused · Conference active';
+                case 'dialing': return 'Dialing...';
+                case 'on_call': return 'Connected · ' + this.formatTime(this.callTimer);
+                case 'disposition': return 'Disposition';
+                default: return '';
+            }
+        },
+
+        async initDialerSession() {
             const SoftphoneManager = await window.loadSoftphone();
             window.__softphone = new SoftphoneManager();
             const phone = window.__softphone;
@@ -1368,7 +1394,7 @@ class extends Component
             });
 
             phone.on('error', (msg) => {
-                this.phoneError = msg;
+                this.sessionError = msg;
             });
 
             phone.on('state-change', (state) => {
@@ -1391,49 +1417,58 @@ class extends Component
                 this.stopTimer();
             });
 
-            phone.on('connected', async (conn) => {
-                // Agent is in the conference — now dial the contact
-                if (this._pendingContactId && this._pendingConferenceName) {
-                    const contactId = this._pendingContactId;
-                    const conferenceName = this._pendingConferenceName;
-                    this._pendingContactId = null;
-                    this._pendingConferenceName = null;
+            await phone.init();
 
-                    const result = await $wire.dialContactIntoConference(contactId, conferenceName);
-                    if (result && result.error) {
-                        this.phoneError = result.error;
-                        setTimeout(() => { this.phoneError = null; }, 10000);
-                    }
-                }
-                this.startTimer();
+            // Load DialerSession module and wire events
+            const DialerSessionClass = await window.loadDialerSession();
+            this.dialerSession = new DialerSessionClass(phone, $wire);
+
+            this.dialerSession.on('state-change', (state) => {
+                this.sessionState = state;
             });
 
-            await phone.init();
+            this.dialerSession.on('error', (msg) => {
+                this.sessionError = msg;
+                setTimeout(() => { this.sessionError = null; }, 10000);
+            });
+
+            this.dialerSession.on('queue-empty', () => {
+                this.sessionError = 'Queue is empty — no more contacts to call';
+                this.autoDial = false;
+            });
+
+            this.dialerSession.on('session-started', () => {
+                this.loadQueue();
+            });
+
+            this.dialerSession.on('session-ended', () => {
+                this.stopTimer();
+            });
         },
 
-        async dialOut(phone, contactId, companyId, conferenceName) {
-            const sp = window.__softphone;
-            if (!sp) { this.phoneError = 'Phone not initialized'; return; }
-
-            if (companyId && companyId !== sp.companyId) {
-                await sp.switchCompany(companyId);
-                if (!sp.isReady) {
-                    for (let i = 0; i < 30; i++) {
-                        await new Promise(r => setTimeout(r, 200));
-                        if (sp.isReady) break;
-                    }
-                }
-                if (!sp.isReady) {
-                    this.phoneError = 'Failed to switch company phone';
-                    return;
-                }
+        async startSession() {
+            if (!$wire.selectedCampaignId) {
+                this.sessionError = 'Select a campaign first';
+                return;
             }
+            await this.dialerSession.start($wire.selectedCampaignId);
+            this.autoDial = true;
+            this.dialerSession.startAutoDial();
+        },
 
-            // Store for the connected handler to trigger contact dial
-            this._pendingContactId = contactId;
-            this._pendingConferenceName = conferenceName;
+        pauseSession() {
+            this.autoDial = false;
+            this.dialerSession.pause();
+        },
 
-            await sp.dial({ To: phone, contactId: String(contactId), conference: conferenceName });
+        resumeSession() {
+            this.autoDial = true;
+            this.dialerSession.resume();
+        },
+
+        async stopSession() {
+            this.autoDial = false;
+            await this.dialerSession.stop();
         },
 
         answerInbound() {
@@ -1465,8 +1500,8 @@ class extends Component
         subscribedCompanyIds: [],
 
         init() {
-            // Initialize SoftphoneManager
-            this.initPhone();
+            // Initialize SoftphoneManager + DialerSession
+            this.initDialerSession();
 
             // Listen for Livewire dispatches
             this.$wire.on('queue-reload', () => {
@@ -1474,8 +1509,8 @@ class extends Component
             });
 
             this.$wire.on('dial-error', ({ message }) => {
-                this.phoneError = 'Call failed: ' + message;
-                setTimeout(() => { this.phoneError = null; }, 10000);
+                this.sessionError = 'Call failed: ' + message;
+                setTimeout(() => { this.sessionError = null; }, 10000);
             });
 
             // Load initial queue
@@ -1485,12 +1520,6 @@ class extends Component
             this.syncInterval = setInterval(() => { this.loadQueue(); }, 30000);
 
             // Re-fetch queue when server-side filters change
-            $watch('$wire.filterCompanyId', (newVal) => {
-                this.loadQueue();
-                if (newVal && window.__softphone && !window.__softphone.hasActiveCall) {
-                    window.__softphone.switchCompany(newVal);
-                }
-            });
             $watch('$wire.queueSearch', () => { this.loadQueue(); });
 
             if (typeof Echo !== 'undefined' && $wire.agentId) {
@@ -1518,11 +1547,21 @@ class extends Component
                     .listen('.dialer.call.connected', (e) => {
                         $wire.onCallConnected(e);
                         this.startTimer();
+                        if (this.dialerSession) {
+                            this.dialerSession.onCallConnected(e.contact?.id);
+                        }
                     })
                     .listen('.dialer.call.ended', (e) => {
                         this.stopTimer();
                         this.hangUp();
                         $wire.onCallEnded(e);
+                        if (this.dialerSession) {
+                            if (e.disposition === 'no_answer' || e.disposition === 'busy') {
+                                this.dialerSession.onNoAnswer();
+                            } else {
+                                this.dialerSession.onCallEnded();
+                            }
+                        }
                     })
                     .listen('.supervisor.joined', (e) => {
                         $wire.onSupervisorJoined(e);
@@ -1581,6 +1620,10 @@ class extends Component
                     Echo.leave('prospector.company.' + cid);
                 });
             }
+            if (this.dialerSession) {
+                this.dialerSession.destroy();
+                this.dialerSession = null;
+            }
             if (window.__softphone) {
                 window.__softphone.destroy();
                 window.__softphone = null;
@@ -1592,137 +1635,84 @@ class extends Component
     }"
 >
     {{-- ════════════════════════════════════════════════════════════════════ --}}
-    {{-- QUEUE FILTER BAR                                                   --}}
+    {{-- SESSION CONTROLS + CAMPAIGN SELECTOR                              --}}
     {{-- ════════════════════════════════════════════════════════════════════ --}}
         <div class="mb-4 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
-            <div class="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                <flux:select wire:model.live="filterCompanyId" size="sm" class="w-40">
-                    <flux:select.option value="">{{ __('All Companies') }}</flux:select.option>
-                    @foreach ($this->assignedCompanies as $company)
-                        <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
+            {{-- Top bar: campaign picker + start/pause/stop controls --}}
+            <div class="flex items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-700">
+                <flux:select wire:model.live="selectedCampaignId" size="sm" class="w-48">
+                    <option value="">Select Campaign</option>
+                    @foreach ($this->agentCampaigns as $campaign)
+                        <option value="{{ $campaign->id }}">{{ $campaign->name }}</option>
                     @endforeach
                 </flux:select>
-                <flux:input wire:model.live.debounce.300ms="queueSearch" size="sm" placeholder="Search..." class="w-48" icon="magnifying-glass" />
-                <span class="ml-auto text-xs text-zinc-500"><span x-text="queueItems.length"></span> in queue</span>
-            </div>
 
-    {{-- ════════════════════════════════════════════════════════════════════ --}}
-    {{-- STAGE FILTER TABS                                                  --}}
-    {{-- ════════════════════════════════════════════════════════════════════ --}}
-            <div class="flex items-center gap-1 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 overflow-x-auto">
-                <button
-                    type="button"
-                    x-on:click="queueFilter = 'all'"
-                    :class="queueFilter === 'all'
-                        ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                        : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'"
-                    class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition"
-                >
-                    All
-                    <span class="rounded-full bg-white/20 px-1.5 text-[10px]" x-text="stageCounts.all || 0"></span>
-                </button>
-                @foreach ($this->pipelineStages as $stage)
-                    <button
-                        type="button"
-                        x-on:click="queueFilter = '{{ $stage->id }}'"
-                        :class="queueFilter === '{{ $stage->id }}'
-                            ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                            : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'"
-                        class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium transition"
-                    >
-                        {{ $stage->name }}
-                        <span class="rounded-full bg-white/20 px-1.5 text-[10px]" x-text="stageCounts['{{ $stage->id }}'] || 0"></span>
-                    </button>
-                @endforeach
-            </div>
-
-    {{-- ════════════════════════════════════════════════════════════════════ --}}
-    {{-- SMART QUEUE (Vertical, Alpine-driven)                              --}}
-    {{-- ════════════════════════════════════════════════════════════════════ --}}
-            <div class="max-h-[360px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                <template x-for="contact in filteredQueue" :key="contact.id">
-                    <button
-                        type="button"
-                        x-on:click="$wire.previewContact(contact.id)"
-                        :class="{
-                            'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500': contact.id === $wire.previewContactId,
-                            'bg-red-50/50 dark:bg-red-900/10': contact.queue_priority <= 2 && contact.id !== $wire.previewContactId,
-                            'hover:bg-zinc-50 dark:hover:bg-zinc-700/50': contact.id !== $wire.previewContactId,
-                        }"
-                        class="flex w-full items-center gap-3 px-3 py-2 text-left transition"
-                    >
-                        {{-- Priority badge --}}
-                        <div class="flex w-16 shrink-0 justify-center">
-                            <template x-if="contact.queue_priority === 1">
-                                <span class="inline-flex items-center rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">CALL</span>
-                            </template>
-                            <template x-if="contact.queue_priority === 2">
-                                <span class="inline-flex items-center rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">NEW</span>
-                            </template>
-                            <template x-if="contact.queue_priority === 3">
-                                <span class="inline-flex items-center rounded bg-blue-500 px-1.5 py-0.5 text-[10px] font-bold text-white">SMS</span>
-                            </template>
-                            <template x-if="contact.queue_priority === 4">
-                                <span class="inline-flex items-center rounded bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white">MISSED</span>
-                            </template>
-                            <template x-if="contact.queue_priority === 5">
-                                <span class="inline-flex items-center rounded bg-purple-500 px-1.5 py-0.5 text-[10px] font-bold text-white">CALLBACK</span>
-                            </template>
-                            <template x-if="contact.queue_priority >= 6">
-                                <span class="text-[10px] text-zinc-400" x-text="contact.last_contacted_at ? new Date(contact.last_contacted_at).toLocaleDateString() : 'new'"></span>
-                            </template>
-                        </div>
-
-                        {{-- Contact info --}}
-                        <div class="min-w-0 flex-1">
-                            <div class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100" x-text="contact.name"></div>
-                            <div class="flex items-center gap-2 text-xs text-zinc-500">
-                                <span x-text="contact.phone"></span>
-                                <span>&middot;</span>
-                                <template x-if="!$wire.filterCompanyId">
-                                    <span class="inline-flex items-center gap-1">
-                                        <span class="inline-block h-2 w-2 rounded-full" :style="'background-color: ' + (contact.company_color || '#6B7280')"></span>
-                                        <span x-text="contact.company_name"></span>
-                                    </span>
-                                </template>
-                                <template x-if="$wire.filterCompanyId">
-                                    <span x-text="contact.company_name"></span>
-                                </template>
-                            </div>
-                        </div>
-
-                        {{-- Stage pill --}}
-                        <span class="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400" x-text="contact.pipeline_stage_name"></span>
-                    </button>
+                <template x-if="sessionState === 'idle'">
+                    <flux:button size="sm" variant="primary" icon="play" x-on:click="startSession()">
+                        Start
+                    </flux:button>
                 </template>
-
-                <template x-if="filteredQueue.length === 0">
-                    <div class="px-4 py-8 text-center text-sm text-zinc-400">
-                        No contacts in queue
+                <template x-if="sessionState !== 'idle' && autoDial">
+                    <flux:button size="sm" variant="filled" icon="pause" x-on:click="pauseSession()">
+                        Pause
+                    </flux:button>
+                </template>
+                <template x-if="sessionState !== 'idle' && !autoDial">
+                    <div class="flex gap-2">
+                        <flux:button size="sm" variant="primary" icon="play" x-on:click="resumeSession()">
+                            Resume
+                        </flux:button>
+                        <flux:button size="sm" variant="danger" icon="stop" x-on:click="stopSession()">
+                            Stop
+                        </flux:button>
                     </div>
                 </template>
+
+                <div class="ml-auto text-xs text-zinc-500" x-text="sessionStatusText"></div>
             </div>
 
-            {{-- Queue footer with dial next --}}
-            <div class="flex items-center justify-between border-t border-zinc-200 px-3 py-2 dark:border-zinc-700">
-                <span class="text-xs text-zinc-500">
-                    <span x-text="filteredQueue.length"></span> contacts
-                </span>
-                @if ($agentStatus === 'available' && $callStatus === 'idle' && ! $showDisposition)
-                    <flux:button size="xs" variant="primary" icon="phone-arrow-up-right"
-                        x-on:click="
-                            const result = await $wire.dialNext();
-                            if (result.error) {
-                                phoneError = result.error;
-                                setTimeout(() => phoneError = null, 5000);
-                            } else {
-                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
-                            }
-                        "
-                    >
-                        Dial Next
-                    </flux:button>
-                @endif
+            {{-- Session error banner --}}
+            <template x-if="sessionError">
+                <div class="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    <flux:icon name="exclamation-triangle" variant="micro" class="shrink-0" />
+                    <span x-text="sessionError"></span>
+                    <button type="button" x-on:click="sessionError = null" class="ml-auto text-red-500 hover:text-red-700">
+                        <flux:icon name="x-mark" variant="micro" />
+                    </button>
+                </div>
+            </template>
+
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+    {{-- HORIZONTAL QUEUE CARDS (campaign-driven)                          --}}
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+            <div class="flex gap-2 overflow-x-auto border-b border-zinc-200 px-4 py-2 dark:border-zinc-700"
+                 x-ref="queueScroll">
+                <template x-for="item in queueItems" :key="item.id">
+                    <div class="flex w-36 flex-shrink-0 cursor-pointer flex-col rounded-lg border border-zinc-200 p-2 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                         x-on:click="$wire.previewContact(item.id)"
+                         :class="{ 'ring-2 ring-blue-500': $wire.previewContactId === item.id }">
+                        <div class="mb-1 flex items-center gap-1.5">
+                            <span class="inline-block size-2 flex-shrink-0 rounded-full" :style="'background:' + (item.company_color || '#6b7280')"></span>
+                            <span class="truncate font-medium text-zinc-900 dark:text-zinc-100" x-text="item.name"></span>
+                        </div>
+                        <div class="truncate text-zinc-500" x-text="item.phone"></div>
+                        <div class="mt-0.5 text-zinc-400" x-text="item.calls_today !== undefined ? ('Call ' + item.calls_today + '/' + (item.max_calls_today || '?') + ' · ' + (item.total_attempts || 0) + '/' + (item.max_total || '?')) : ''"></div>
+                    </div>
+                </template>
+                <div x-show="queueItems.length === 0" class="py-3 text-xs text-zinc-400">
+                    <template x-if="sessionState === 'idle'">
+                        <span>Start a session to load contacts</span>
+                    </template>
+                    <template x-if="sessionState !== 'idle'">
+                        <span>No contacts in queue</span>
+                    </template>
+                </div>
+            </div>
+
+            {{-- Queue footer --}}
+            <div class="flex items-center justify-between px-4 py-2">
+                <span class="text-xs text-zinc-500"><span x-text="queueItems.length"></span> in queue</span>
+                <flux:input wire:model.live.debounce.300ms="queueSearch" size="sm" placeholder="Search..." class="w-40" icon="magnifying-glass" />
             </div>
         </div>
 
@@ -1982,7 +1972,7 @@ class extends Component
                                 <span class="font-mono text-sm font-bold text-green-600 dark:text-green-400" x-text="formatTime(callTimer)">00:00</span>
                             @endif
                             <template x-if="!phoneReady">
-                                <button type="button" x-on:click="initPhone()" class="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400">Retry</button>
+                                <button type="button" x-on:click="initDialerSession()" class="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400">Retry</button>
                             </template>
                         </div>
                     </div>
@@ -2152,37 +2142,20 @@ class extends Component
                                 @endif
                             </div>
                         @else
-                            {{-- Idle / ready state — always show dial buttons --}}
+                            {{-- Idle / ready state — session-based controls --}}
                             <div class="flex items-center justify-between">
-                                <div class="flex gap-2">
-                                    <flux:button variant="primary" size="sm" icon="phone-arrow-up-right"
-                                        x-on:click="
-                                            const result = await $wire.dialNext();
-                                            if (result.error) {
-                                                phoneError = result.error;
-                                                setTimeout(() => phoneError = null, 5000);
-                                            } else {
-                                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
-                                            }
-                                        "
-                                    >
-                                        Dial Next
-                                    </flux:button>
-                                    @if ($this->contactDetail)
-                                        <flux:button variant="filled" size="sm" icon="phone"
-                                            x-on:click="
-                                                const result = await $wire.dialContact({{ $this->contactDetail->id }});
-                                                if (result.error) {
-                                                    phoneError = result.error;
-                                                    setTimeout(() => phoneError = null, 5000);
-                                                } else {
-                                                    await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
-                                                }
-                                            "
-                                        >
-                                            Call {{ $this->contactDetail->getFullName() }}
+                                <div class="flex items-center gap-2">
+                                    <template x-if="sessionState === 'idle'">
+                                        <span class="text-sm text-zinc-400">Select a campaign above and press Start to begin auto-dialing.</span>
+                                    </template>
+                                    <template x-if="sessionState === 'ready' && !autoDial">
+                                        <flux:button variant="primary" size="sm" icon="play" x-on:click="resumeSession()">
+                                            Resume Auto-Dial
                                         </flux:button>
-                                    @endif
+                                    </template>
+                                    <template x-if="sessionState === 'ready' && autoDial">
+                                        <flux:badge color="blue">Auto-dialing...</flux:badge>
+                                    </template>
                                 </div>
                                 <flux:button variant="ghost" size="sm" icon="hashtag" x-on:click="showManualDial = !showManualDial">
                                     Manual
@@ -2197,17 +2170,7 @@ class extends Component
                                         placeholder="Enter phone number..."
                                         class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
                                     />
-                                    <flux:button size="sm" variant="primary" icon="phone"
-                                        x-on:click="
-                                            const result = await $wire.manualDial();
-                                            if (result.error) {
-                                                phoneError = result.error;
-                                                setTimeout(() => phoneError = null, 5000);
-                                            } else {
-                                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
-                                            }
-                                        "
-                                    >Dial</flux:button>
+                                    <flux:button size="sm" variant="primary" icon="phone" wire:click="manualDial">Dial</flux:button>
                                 </div>
                             </div>
                         @endif
