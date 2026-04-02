@@ -150,4 +150,52 @@ class CampaignQueueService
     {
         return $this->countCallable($campaign) > 0;
     }
+
+    /**
+     * Return the queue as a JSON-serializable array for Alpine.js.
+     */
+    public function getQueueAsArray(Campaign $campaign, $agent, int $limit = 50): array
+    {
+        $entries = CampaignContact::where('campaign_id', $campaign->id)
+            ->where('status', 'queued')
+            ->where('calls_today', '<', $campaign->max_calls_per_day)
+            ->where(function ($q) {
+                $q->whereNull('next_callable_at')
+                    ->orWhere('next_callable_at', '<=', now());
+            })
+            ->orderByDesc('is_priority')
+            ->orderBy('sort_order')
+            ->with('contact.company')
+            ->limit($limit)
+            ->get()
+            ->filter(function (CampaignContact $entry) use ($campaign) {
+                $contact = $entry->contact;
+
+                return $contact
+                    && ! $contact->trashed()
+                    && ! $contact->do_not_call
+                    && ! $entry->isExhausted($campaign)
+                    && $campaign->isContactCallable($contact);
+            });
+
+        return $entries->map(function (CampaignContact $entry) use ($campaign) {
+            $contact = $entry->contact;
+
+            return [
+                'id' => $contact->id,
+                'campaign_contact_id' => $entry->id,
+                'name' => $contact->getFullName(),
+                'phone' => $contact->getDisplayPhone(),
+                'company_id' => $contact->company_id,
+                'company_name' => $contact->company?->name,
+                'company_color' => $contact->company?->color,
+                'calls_today' => $entry->calls_today,
+                'max_calls_today' => $campaign->max_calls_per_day,
+                'total_attempts' => $entry->total_attempts,
+                'max_total' => $campaign->max_total_attempts,
+                'is_priority' => $entry->is_priority,
+                'follow_up_at' => $contact->follow_up_at?->toISOString(),
+            ];
+        })->values()->all();
+    }
 }
