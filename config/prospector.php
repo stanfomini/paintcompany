@@ -70,6 +70,9 @@ return [
     */
 
     'dispositions' => [
+        'booked' => [
+            'label' => 'Booked Appointment',
+        ],
         'interested' => [
             'label' => 'Interested',
         ],
