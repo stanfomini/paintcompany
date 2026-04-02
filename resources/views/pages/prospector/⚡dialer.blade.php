@@ -584,29 +584,54 @@ class extends Component
             return ['error' => 'No agent'];
         }
 
-        $contact = Contact::with('company')->find($contactId);
+        $contact = Contact::with('company.twilioAccount')->find($contactId);
 
         if (! $contact || ! $contact->company) {
             return ['error' => 'Contact not found'];
         }
 
-        // Set UI state
-        $this->activeContact = [
-            'id' => $contact->id,
-            'name' => $contact->getFullName(),
-            'phone' => $contact->getDisplayPhone(),
-        ];
-        $this->previewContactId = $contact->id;
-        $this->callStatus = 'ringing';
+        $agent = Agent::findOrFail($this->agentId);
+        $company = $contact->company;
+
+        // Select phone number
+        $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
+
+        try {
+            $fromNumber = $numberService->selectNumber($company, $contact, null);
+        } catch (\RuntimeException $e) {
+            $this->dispatch('dial-error', message: $e->getMessage());
+
+            return ['error' => $e->getMessage()];
+        }
+
+        $conferenceName = 'call-'.\Illuminate\Support\Str::ulid();
+
+        // Create Call record
+        $call = Call::create([
+            'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
+            'company_id' => $company->id,
+            'agent_id' => $agent->id,
+            'contact_id' => $contact->id,
+            'from_phone_number_id' => $fromNumber->id,
+            'from_number' => $fromNumber->getEffectiveCallerId(),
+            'to_number' => $contact->phone,
+            'direction' => 'outbound',
+            'status' => 'ringing',
+            'started_at' => now(),
+            'twilio_conference_sid' => $conferenceName,
+        ]);
+
+        // Set active call state
+        $this->setActiveCallFromCall($call->load('contact'));
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
-        $this->loadContactState($contact->id);
         $this->clearCaches();
 
         return [
             'phone' => $contact->phone,
             'contactId' => $contact->id,
-            'companyId' => $contact->company_id,
+            'companyId' => $company->id,
+            'conferenceName' => $conferenceName,
         ];
     }
 
@@ -667,23 +692,116 @@ class extends Component
             return ['error' => 'Contact was claimed by another agent'];
         }
 
-        $this->activeContact = [
-            'id' => $contact->id,
-            'name' => $contact->getFullName(),
-            'phone' => $contact->getDisplayPhone(),
-        ];
-        $this->previewContactId = $contact->id;
-        $this->callStatus = 'ringing';
+        $contact->load('company.twilioAccount');
+        $company = $contact->company;
+
+        if (! $company) {
+            return ['error' => 'Contact has no company'];
+        }
+
+        // Select phone number
+        $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
+
+        try {
+            $fromNumber = $numberService->selectNumber($company, $contact, null);
+        } catch (\RuntimeException $e) {
+            $this->dispatch('dial-error', message: $e->getMessage());
+
+            return ['error' => $e->getMessage()];
+        }
+
+        $conferenceName = 'call-'.\Illuminate\Support\Str::ulid();
+
+        // Create Call record
+        $call = Call::create([
+            'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
+            'company_id' => $company->id,
+            'agent_id' => $agent->id,
+            'contact_id' => $contact->id,
+            'from_phone_number_id' => $fromNumber->id,
+            'from_number' => $fromNumber->getEffectiveCallerId(),
+            'to_number' => $contact->phone,
+            'direction' => 'outbound',
+            'status' => 'ringing',
+            'started_at' => now(),
+            'twilio_conference_sid' => $conferenceName,
+        ]);
+
+        $this->setActiveCallFromCall($call->load('contact'));
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
-        $this->loadContactState($contact->id);
         $this->clearCaches();
 
         return [
             'phone' => $contact->phone,
             'contactId' => $contact->id,
-            'companyId' => $contact->company_id,
+            'companyId' => $company->id,
+            'conferenceName' => $conferenceName,
         ];
+    }
+
+    public function dialContactIntoConference(int $contactId, string $conferenceName): array
+    {
+        if (! $this->agent) {
+            return ['error' => 'No agent'];
+        }
+
+        // Find the Call record created in dialContact/dialNext
+        $call = Call::where('twilio_conference_sid', $conferenceName)->first();
+
+        if (! $call) {
+            return ['error' => 'Call not found'];
+        }
+
+        // Guard: already dialed (idempotent — protects against double-fires)
+        if ($call->twilio_call_sid) {
+            return ['success' => true, 'callId' => $call->id];
+        }
+
+        $contact = Contact::with('company.twilioAccount')->find($contactId);
+
+        if (! $contact) {
+            return ['error' => 'Contact not found'];
+        }
+
+        $fromNumber = $call->fromPhoneNumber;
+
+        if (! $fromNumber) {
+            return ['error' => 'No phone number on call record'];
+        }
+
+        $agent = Agent::findOrFail($this->agentId);
+
+        try {
+            $amdParams = [];
+            if (config('prospector.defaults.amd_enabled')) {
+                $amdParams = app(\App\Services\Prospector\AmdService::class)->getAmdParams();
+            }
+
+            $conferenceService = app(ConferenceService::class);
+            $callSid = $conferenceService->dialContactIntoConference(
+                $conferenceName,
+                $contact,
+                $fromNumber,
+                $amdParams,
+            );
+
+            $call->update(['twilio_call_sid' => $callSid]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('dialContactIntoConference failed', [
+                'call_id' => $call->id,
+                'error' => $e->getMessage(),
+            ]);
+            $call->markFailed();
+
+            return ['error' => 'Failed to dial: '.$e->getMessage()];
+        }
+
+        // Broadcast ringing event
+        broadcast(new \App\Events\Prospector\DialerCallRinging($call, $agent->id));
+        app(AgentStateService::class)->setStatus($agent, 'ringing');
+
+        return ['success' => true, 'callId' => $call->id];
     }
 
     private function setActiveCallFromCall(Call $call): void
@@ -957,7 +1075,7 @@ class extends Component
 
         $targetAgent = Agent::findOrFail($agentId);
         $service = app(ConferenceService::class);
-        $this->transferCallSid = $service->transferToAgent($conferenceName, $targetAgent, $call->fromPhoneNumber);
+        $this->transferCallSid = $service->transferToAgent($conferenceName, $targetAgent->id);
         $this->transferStatus = 'ringing';
         $this->transferAgentId = $agentId;
     }
@@ -1267,10 +1385,27 @@ class extends Component
                 this.stopTimer();
             });
 
+            phone.on('connected', async (conn) => {
+                // Agent is in the conference — now dial the contact
+                if (this._pendingContactId && this._pendingConferenceName) {
+                    const contactId = this._pendingContactId;
+                    const conferenceName = this._pendingConferenceName;
+                    this._pendingContactId = null;
+                    this._pendingConferenceName = null;
+
+                    const result = await $wire.dialContactIntoConference(contactId, conferenceName);
+                    if (result && result.error) {
+                        this.phoneError = result.error;
+                        setTimeout(() => { this.phoneError = null; }, 10000);
+                    }
+                }
+                this.startTimer();
+            });
+
             await phone.init();
         },
 
-        async dialOut(phone, contactId, companyId) {
+        async dialOut(phone, contactId, companyId, conferenceName) {
             const sp = window.__softphone;
             if (!sp) { this.phoneError = 'Phone not initialized'; return; }
 
@@ -1288,7 +1423,11 @@ class extends Component
                 }
             }
 
-            await sp.dial({ To: phone, contactId: String(contactId) });
+            // Store for the connected handler to trigger contact dial
+            this._pendingContactId = contactId;
+            this._pendingConferenceName = conferenceName;
+
+            await sp.dial({ To: phone, contactId: String(contactId), conference: conferenceName });
         },
 
         answerInbound() {
@@ -1342,7 +1481,7 @@ class extends Component
             // Re-fetch queue when server-side filters change
             $watch('$wire.filterCompanyId', (newVal) => {
                 this.loadQueue();
-                if (newVal && window.__softphone) {
+                if (newVal && window.__softphone && !window.__softphone.hasActiveCall) {
                     window.__softphone.switchCompany(newVal);
                 }
             });
@@ -1571,7 +1710,7 @@ class extends Component
                                 phoneError = result.error;
                                 setTimeout(() => phoneError = null, 5000);
                             } else {
-                                await dialOut(result.phone, result.contactId, result.companyId);
+                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
                             }
                         "
                     >
@@ -1637,7 +1776,7 @@ class extends Component
                                                 phoneError = result.error;
                                                 setTimeout(() => phoneError = null, 5000);
                                             } else {
-                                                await dialOut(result.phone, result.contactId, result.companyId);
+                                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
                                             }
                                         "
                                     >
@@ -2017,7 +2156,7 @@ class extends Component
                                                 phoneError = result.error;
                                                 setTimeout(() => phoneError = null, 5000);
                                             } else {
-                                                await dialOut(result.phone, result.contactId, result.companyId);
+                                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
                                             }
                                         "
                                     >
@@ -2031,7 +2170,7 @@ class extends Component
                                                     phoneError = result.error;
                                                     setTimeout(() => phoneError = null, 5000);
                                                 } else {
-                                                    await dialOut(result.phone, result.contactId, result.companyId);
+                                                    await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
                                                 }
                                             "
                                         >
@@ -2059,7 +2198,7 @@ class extends Component
                                                 phoneError = result.error;
                                                 setTimeout(() => phoneError = null, 5000);
                                             } else {
-                                                await dialOut(result.phone, result.contactId, result.companyId);
+                                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
                                             }
                                         "
                                     >Dial</flux:button>

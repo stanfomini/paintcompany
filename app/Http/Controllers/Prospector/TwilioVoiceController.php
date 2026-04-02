@@ -115,46 +115,30 @@ class TwilioVoiceController extends Controller
      * POST /prospector/webhook/twilio/voice/incoming
      *
      * TwiML endpoint called by Twilio when the Voice SDK initiates a call.
+     * Returns simple TwiML — all orchestration is done by the Livewire component.
      *
-     * For outbound calls: receives To (phone number) and contactId from device.connect() params.
-     * Creates the Call record, returns <Conference> TwiML to connect the agent,
-     * then dials the contact into the same conference via Participants API.
-     *
-     * For conference joins: receives a conference param and joins directly.
+     * For conference joins (outbound calls, transfers): reads conference param, returns <Conference> TwiML.
+     * For client-to-client: dials the target client.
      */
     public function handleIncoming(Request $request): Response
     {
         $to = $request->input('To', '');
-        $from = $request->input('From', '');
         $conferenceName = $request->input('conference', '');
-        $contactId = $request->input('contactId');
 
-        Log::error('DEBUG handleIncoming', [
-            'from' => $from,
-            'to' => $to,
-            'conference' => $conferenceName,
-            'contactId' => $contactId,
-        ]);
-
-        // Case 1: Direct conference join (transfers, supervisor, parallel dial)
+        // Conference join (outbound calls, transfers, supervisor, parallel dial)
         if ($conferenceName) {
             $response = new VoiceResponse;
             $dial = $response->dial();
             $dial->conference($conferenceName, [
                 'startConferenceOnEnter' => true,
-                'endConferenceOnExit' => false,
+                'endConferenceOnExit' => true,
                 'beep' => false,
             ]);
 
             return $this->twimlResponse($response);
         }
 
-        // Case 2: Outbound call initiated by agent via device.connect()
-        if ($contactId && str_starts_with($from, 'client:')) {
-            return $this->handleOutboundDial($request, $from, (int) $contactId);
-        }
-
-        // Case 3: Client-to-client (should not happen in normal flow)
+        // Client-to-client (should not happen in normal flow)
         if (str_starts_with($to, 'client:')) {
             $response = new VoiceResponse;
             $dial = $response->dial();
@@ -167,130 +151,6 @@ class TwilioVoiceController extends Controller
         $response = new VoiceResponse;
         $response->say('No call parameters specified.');
         $response->hangup();
-
-        return $this->twimlResponse($response);
-    }
-
-    /**
-     * Handle an outbound dial initiated by the agent's browser.
-     * Creates the Call record, puts the agent in a conference via TwiML,
-     * and dials the contact into the same conference via Participants API.
-     */
-    protected function handleOutboundDial(Request $request, string $fromIdentity, int $contactId): Response
-    {
-        // Parse agent from client identity (format: "client:agent-{id}")
-        $agentId = (int) str_replace('client:agent-', '', $fromIdentity);
-        $agent = Agent::find($agentId);
-
-        if (! $agent) {
-            Log::warning('handleOutboundDial: agent not found', ['identity' => $fromIdentity]);
-            $response = new VoiceResponse;
-            $response->say('Agent not found.');
-            $response->hangup();
-
-            return $this->twimlResponse($response);
-        }
-
-        $contact = Contact::with('company.twilioAccount')->find($contactId);
-
-        if (! $contact || ! $contact->company) {
-            Log::warning('handleOutboundDial: contact not found', ['contactId' => $contactId]);
-            $response = new VoiceResponse;
-            $response->say('Contact not found.');
-            $response->hangup();
-
-            return $this->twimlResponse($response);
-        }
-
-        $company = $contact->company;
-
-        // Select outbound phone number
-        $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
-
-        try {
-            $fromNumber = $numberService->selectNumber($company, $contact, null);
-        } catch (\RuntimeException $e) {
-            Log::error('handleOutboundDial: no number available', ['error' => $e->getMessage()]);
-            $response = new VoiceResponse;
-            $response->say('No phone number available for this company.');
-            $response->hangup();
-
-            return $this->twimlResponse($response);
-        }
-
-        $conferenceName = 'call-'.Str::ulid();
-
-        // Create Call record
-        $call = Call::create([
-            'ulid' => Str::ulid()->toBase32(),
-            'company_id' => $company->id,
-            'agent_id' => $agent->id,
-            'contact_id' => $contact->id,
-            'from_phone_number_id' => $fromNumber->id,
-            'from_number' => $fromNumber->getEffectiveCallerId(),
-            'to_number' => $contact->phone,
-            'direction' => 'outbound',
-            'status' => 'ringing',
-            'started_at' => now(),
-            'twilio_call_sid' => $request->input('CallSid'),
-            'twilio_conference_sid' => $conferenceName,
-        ]);
-
-        // Dial the contact synchronously. The Twilio API call takes ~1-2s which is
-        // within Twilio's 15s TwiML timeout. The agent's WebRTC connection is being
-        // established in parallel while this executes.
-        try {
-            $amdParams = [];
-            if (config('prospector.defaults.amd_enabled')) {
-                $amdParams = app(\App\Services\Prospector\AmdService::class)->getAmdParams();
-            }
-
-            $callSid = $this->conferenceService->dialContactIntoConference(
-                $conferenceName,
-                $contact,
-                $fromNumber,
-                $amdParams,
-            );
-
-            $call->update(['twilio_call_sid' => $callSid]);
-
-            Log::error('DEBUG: Contact dialed successfully', [
-                'call_id' => $call->id,
-                'contact_sid' => $callSid,
-                'conference' => $conferenceName,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('handleOutboundDial: failed to dial contact', [
-                'call_id' => $call->id,
-                'contact_id' => $contact->id,
-                'error' => $e->getMessage(),
-            ]);
-            $call->markFailed();
-        }
-
-        // Broadcast ringing event to agent's browser
-        broadcast(new \App\Events\Prospector\DialerCallRinging($call, $agent->id));
-
-        // Update agent status
-        app(\App\Services\Prospector\AgentStateService::class)->setStatus($agent, 'ringing');
-
-        Log::info('Outbound call initiated via webhook', [
-            'call_id' => $call->id,
-            'agent_id' => $agent->id,
-            'contact_id' => $contact->id,
-            'conference' => $conferenceName,
-            'from' => $fromNumber->getEffectiveCallerId(),
-            'to' => $contact->phone,
-        ]);
-
-        // Return TwiML: agent joins the conference FIRST
-        $response = new VoiceResponse;
-        $dial = $response->dial();
-        $dial->conference($conferenceName, [
-            'startConferenceOnEnter' => true,
-            'endConferenceOnExit' => true,
-            'beep' => false,
-        ]);
 
         return $this->twimlResponse($response);
     }
