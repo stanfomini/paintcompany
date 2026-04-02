@@ -34,6 +34,14 @@ class Campaign extends Model
         'auto_vm_drop',
         'default_rvm_template_id',
         'created_by',
+        'max_calls_per_day',
+        'max_total_attempts',
+        'max_days_in_campaign',
+        'min_minutes_between',
+        'next_campaign_id',
+        'calling_hours_start',
+        'calling_hours_end',
+        'auto_dial',
     ];
 
     protected function casts(): array
@@ -46,6 +54,7 @@ class Campaign extends Model
             'calls_attempted' => 'integer',
             'calls_connected' => 'integer',
             'auto_vm_drop' => 'boolean',
+            'auto_dial' => 'boolean',
         ];
     }
 
@@ -96,6 +105,11 @@ class Campaign extends Model
     public function defaultRvmTemplate(): BelongsTo
     {
         return $this->belongsTo(RvmTemplate::class, 'default_rvm_template_id');
+    }
+
+    public function nextCampaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class, 'next_campaign_id');
     }
 
     // ──────────────────────────────────────
@@ -165,5 +179,31 @@ class Campaign extends Model
         $this->update([
             'contact_count' => $this->contacts()->count(),
         ]);
+    }
+
+    public function isContactCallable(\App\Models\Prospector\Contact $contact): bool
+    {
+        if (! $contact->timezone) {
+            return true;
+        }
+
+        $contactTime = now()->timezone($contact->timezone);
+        $hour = (int) $contactTime->format('H');
+        $timeStr = $contactTime->format('H:i');
+
+        // TCPA floor: 8am-9pm in contact's local time
+        if ($hour < 8 || $hour >= 21) {
+            return false;
+        }
+
+        // Campaign override (tighter only)
+        if ($this->calling_hours_start && $timeStr < $this->calling_hours_start) {
+            return false;
+        }
+        if ($this->calling_hours_end && $timeStr >= $this->calling_hours_end) {
+            return false;
+        }
+
+        return true;
     }
 }

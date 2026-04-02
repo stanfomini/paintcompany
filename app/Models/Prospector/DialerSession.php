@@ -28,6 +28,7 @@ class DialerSession extends Model
         'total_talk_seconds',
         'started_at',
         'ended_at',
+        'conference_name',
     ];
 
     protected function casts(): array

@@ -27,6 +27,12 @@ class CampaignContact extends Model
         'last_attempted_at',
         'last_disposition',
         'added_at',
+        'calls_today',
+        'total_attempts',
+        'entered_at',
+        'last_called_at',
+        'next_callable_at',
+        'exhausted_at',
     ];
 
     protected function casts(): array
@@ -37,6 +43,10 @@ class CampaignContact extends Model
             'attempts' => 'integer',
             'last_attempted_at' => 'datetime',
             'added_at' => 'datetime',
+            'entered_at' => 'datetime',
+            'last_called_at' => 'datetime',
+            'next_callable_at' => 'datetime',
+            'exhausted_at' => 'datetime',
         ];
     }
 
@@ -190,5 +200,49 @@ class CampaignContact extends Model
     public function unclaim(): void
     {
         $this->update(['claimed_by_agent_id' => null]);
+    }
+
+    public function recordCallAttempt(Campaign $campaign): void
+    {
+        $this->increment('calls_today');
+        $this->increment('total_attempts');
+        $this->increment('attempts');
+        $this->update([
+            'last_called_at' => now(),
+            'last_attempted_at' => now(),
+            'next_callable_at' => now()->addMinutes($campaign->min_minutes_between),
+        ]);
+    }
+
+    public function isExhausted(Campaign $campaign): bool
+    {
+        if ($this->total_attempts >= $campaign->max_total_attempts) {
+            return true;
+        }
+        if ($this->entered_at && $this->entered_at->diffInDays(now()) >= $campaign->max_days_in_campaign) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function exhaust(): void
+    {
+        $this->update([
+            'status' => 'exhausted',
+            'exhausted_at' => now(),
+        ]);
+    }
+
+    public function isCallableNow(Campaign $campaign): bool
+    {
+        if ($this->calls_today >= $campaign->max_calls_per_day) {
+            return false;
+        }
+        if ($this->next_callable_at && $this->next_callable_at->isFuture()) {
+            return false;
+        }
+
+        return true;
     }
 }
