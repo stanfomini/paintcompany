@@ -1765,17 +1765,7 @@ class extends Component
                             <div class="flex items-center justify-between">
                                 <flux:heading size="sm">Contact</flux:heading>
                                 @if ($callStatus === 'idle')
-                                    <flux:button size="xs" variant="primary" icon="phone"
-                                        x-on:click="
-                                            const result = await $wire.dialContact({{ $cd->id }});
-                                            if (result.error) {
-                                                phoneError = result.error;
-                                                setTimeout(() => phoneError = null, 5000);
-                                            } else {
-                                                await dialOut(result.phone, result.contactId, result.companyId, result.conferenceName);
-                                            }
-                                        "
-                                    >
+                                    <flux:button size="xs" variant="primary" icon="phone" wire:click="dialContact({{ $cd->id }})">
                                         Call
                                     </flux:button>
                                 @endif
@@ -2199,7 +2189,7 @@ class extends Component
                                         @else
                                             <button
                                                 type="button"
-                                                wire:click="submitDisposition('{{ $key }}')"
+                                                x-on:click="$wire.submitDisposition('{{ $key }}').then(() => { if (dialerSession) dialerSession.onDispositioned(); })"
                                                 class="rounded-lg border px-3 py-2 text-left text-sm font-medium transition {{ $dispColor }}"
                                             >{{ $label }}</button>
                                         @endif
@@ -2215,7 +2205,8 @@ class extends Component
                                             wire:model="callbackDate"
                                             class="flex-1 rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-zinc-700 dark:text-zinc-100"
                                         />
-                                        <flux:button size="sm" variant="primary" wire:click="submitDisposition('callback', callbackDate)" x-on:click="showCallbackPicker = false">
+                                        <flux:button size="sm" variant="primary"
+                                            x-on:click="$wire.submitDisposition('callback', callbackDate).then(() => { showCallbackPicker = false; if (dialerSession) dialerSession.onDispositioned(); })">
                                             Schedule
                                         </flux:button>
                                     </div>
