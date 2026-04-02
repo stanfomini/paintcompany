@@ -16,6 +16,16 @@ class extends Component
 {
     public int $campaignId;
 
+    // Call rules (editable)
+    public int $maxCallsPerDay = 3;
+    public int $maxTotalAttempts = 90;
+    public int $maxDaysInCampaign = 30;
+    public int $minMinutesBetween = 240;
+    public ?int $nextCampaignId = null;
+    public ?string $callingHoursStart = null;
+    public ?string $callingHoursEnd = null;
+    public bool $autoDial = true;
+
     // Filters
     public string $statusFilter = '';
 
@@ -43,7 +53,47 @@ class extends Component
     public function mount(int $campaignId): void
     {
         $this->campaignId = $campaignId;
-        Campaign::findOrFail($campaignId);
+        $campaign = Campaign::findOrFail($campaignId);
+
+        // Hydrate call rule fields
+        $this->maxCallsPerDay = $campaign->max_calls_per_day ?? 3;
+        $this->maxTotalAttempts = $campaign->max_total_attempts ?? 90;
+        $this->maxDaysInCampaign = $campaign->max_days_in_campaign ?? 30;
+        $this->minMinutesBetween = $campaign->min_minutes_between ?? 240;
+        $this->nextCampaignId = $campaign->next_campaign_id;
+        $this->callingHoursStart = $campaign->calling_hours_start;
+        $this->callingHoursEnd = $campaign->calling_hours_end;
+        $this->autoDial = $campaign->auto_dial ?? true;
+    }
+
+    public function saveCallRules(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $campaign = Campaign::findOrFail($this->campaignId);
+        $campaign->update([
+            'max_calls_per_day' => $this->maxCallsPerDay,
+            'max_total_attempts' => $this->maxTotalAttempts,
+            'max_days_in_campaign' => $this->maxDaysInCampaign,
+            'min_minutes_between' => $this->minMinutesBetween,
+            'next_campaign_id' => $this->nextCampaignId ?: null,
+            'calling_hours_start' => $this->callingHoursStart ?: null,
+            'calling_hours_end' => $this->callingHoursEnd ?: null,
+            'auto_dial' => $this->autoDial,
+        ]);
+
+        $this->clearCaches();
+    }
+
+    #[Computed]
+    public function otherCampaigns(): \Illuminate\Support\Collection
+    {
+        return Campaign::where('company_id', $this->campaign->company_id)
+            ->where('id', '!=', $this->campaignId)
+            ->orderBy('name')
+            ->get();
     }
 
     #[Computed]
@@ -370,7 +420,7 @@ class extends Component
 
     protected function clearCaches(): void
     {
-        unset($this->campaign, $this->stats, $this->queueContacts, $this->availableContacts);
+        unset($this->campaign, $this->stats, $this->queueContacts, $this->availableContacts, $this->otherCampaigns);
     }
 
     protected function getStatusBadgeColor(string $status): string
@@ -479,6 +529,107 @@ class extends Component
         <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
             <div class="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{{ $this->stats['connection_rate'] }}%</div>
             <div class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Connection Rate') }}</div>
+        </div>
+    </div>
+
+    {{-- Call Rules Settings --}}
+    <div class="mb-6 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800" x-data="{ open: false }">
+        <button x-on:click="open = !open" class="flex w-full items-center justify-between px-5 py-4 text-left">
+            <div class="flex items-center gap-2">
+                <flux:icon name="cog-6-tooth" variant="mini" class="text-zinc-400" />
+                <flux:heading size="sm">{{ __('Call Rules') }}</flux:heading>
+                <flux:text class="text-zinc-400">
+                    {{ $maxCallsPerDay }}x/day &middot; {{ $maxTotalAttempts }} total &middot; {{ $maxDaysInCampaign }} days
+                </flux:text>
+            </div>
+            <flux:icon name="chevron-down" variant="mini" class="text-zinc-400 transition" ::class="open && 'rotate-180'" />
+        </button>
+
+        <div x-show="open" x-collapse class="border-t border-zinc-200 px-5 pb-5 pt-4 dark:border-zinc-700">
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                    <flux:input
+                        type="number"
+                        wire:model.blur="maxCallsPerDay"
+                        wire:change="saveCallRules"
+                        label="{{ __('Calls Per Day') }}"
+                        min="1" max="20"
+                        description="{{ __('Per contact per day') }}"
+                    />
+                </div>
+                <div>
+                    <flux:input
+                        type="number"
+                        wire:model.blur="maxTotalAttempts"
+                        wire:change="saveCallRules"
+                        label="{{ __('Max Total Attempts') }}"
+                        min="1" max="999"
+                        description="{{ __('Lifetime before exhaustion') }}"
+                    />
+                </div>
+                <div>
+                    <flux:input
+                        type="number"
+                        wire:model.blur="maxDaysInCampaign"
+                        wire:change="saveCallRules"
+                        label="{{ __('Max Days') }}"
+                        min="1" max="365"
+                        description="{{ __('Days before exhaustion') }}"
+                    />
+                </div>
+                <div>
+                    <flux:input
+                        type="number"
+                        wire:model.blur="minMinutesBetween"
+                        wire:change="saveCallRules"
+                        label="{{ __('Min Minutes Between') }}"
+                        min="0" max="1440"
+                        description="{{ __('Spacing between calls') }}"
+                    />
+                </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                    <flux:input
+                        type="time"
+                        wire:model.blur="callingHoursStart"
+                        wire:change="saveCallRules"
+                        label="{{ __('Calling Hours Start') }}"
+                        description="{{ __('Contact local time') }}"
+                    />
+                </div>
+                <div>
+                    <flux:input
+                        type="time"
+                        wire:model.blur="callingHoursEnd"
+                        wire:change="saveCallRules"
+                        label="{{ __('Calling Hours End') }}"
+                        description="{{ __('Contact local time') }}"
+                    />
+                </div>
+                <div>
+                    <flux:select
+                        wire:model.live="nextCampaignId"
+                        wire:change="saveCallRules"
+                        label="{{ __('Next Campaign') }}"
+                        description="{{ __('Move exhausted contacts here') }}"
+                    >
+                        <option value="">{{ __('None (stop calling)') }}</option>
+                        @foreach ($this->otherCampaigns as $camp)
+                            <option value="{{ $camp->id }}">{{ $camp->name }}</option>
+                        @endforeach
+                    </flux:select>
+                </div>
+                <div class="flex items-end pb-6">
+                    <flux:checkbox
+                        wire:model.live="autoDial"
+                        wire:change="saveCallRules"
+                        label="{{ __('Auto-dial') }}"
+                        description="{{ __('Auto-advance between calls') }}"
+                    />
+                </div>
+            </div>
         </div>
     </div>
 
