@@ -1,8 +1,6 @@
 <?php
 
 use App\Models\Prospector\Campaign;
-use App\Models\Prospector\Company;
-use App\Models\Prospector\PhoneNumber;
 use App\Models\Prospector\RvmTemplate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -24,22 +22,15 @@ class extends Component
     public string $search = '';
 
     #[Url]
-    public string $filterCompany = '';
-
-    #[Url]
     public string $filterStatus = '';
 
     // Form state
     public bool $showModal = false;
     public ?int $editingId = null;
-    public ?int $companyId = null;
     public string $name = '';
     public string $description = '';
     public string $status = 'draft';
-    public ?int $phoneNumberId = null;
-    public bool $useLocalPresence = false;
-    public string $dialerMode = 'single';
-    public int $parallelLines = 2;
+    public bool $useLocalPresence = true;
     public int $priority = 10;
     public bool $autoVmDrop = false;
     public ?int $defaultRvmTemplateId = null;
@@ -62,41 +53,15 @@ class extends Component
         return Campaign::query()
             ->with(['company', 'phoneNumber'])
             ->when($this->search, fn ($q) => $q->where('name', 'like', '%'.$this->search.'%'))
-            ->when($this->filterCompany, fn ($q) => $q->where('company_id', $this->filterCompany))
             ->when($this->filterStatus, fn ($q) => $q->where('status', $this->filterStatus))
             ->orderByDesc('created_at')
             ->paginate(15);
     }
 
     #[Computed]
-    public function companies(): \Illuminate\Support\Collection
-    {
-        return Company::query()->active()->orderBy('name')->get();
-    }
-
-    #[Computed]
-    public function availablePhoneNumbers(): \Illuminate\Support\Collection
-    {
-        if (! $this->companyId) {
-            return PhoneNumber::query()->where('id', 0)->get();
-        }
-
-        return PhoneNumber::query()
-            ->where('company_id', $this->companyId)
-            ->where('is_active', true)
-            ->orderBy('friendly_name')
-            ->get();
-    }
-
-    #[Computed]
     public function availableRvmTemplates(): \Illuminate\Support\Collection
     {
-        if (! $this->companyId) {
-            return collect();
-        }
-
         return RvmTemplate::query()
-            ->forCompany($this->companyId)
             ->active()
             ->orderBy('name')
             ->get();
@@ -107,22 +72,9 @@ class extends Component
         $this->resetPage();
     }
 
-    public function updatedFilterCompany(): void
-    {
-        $this->resetPage();
-    }
-
     public function updatedFilterStatus(): void
     {
         $this->resetPage();
-    }
-
-    public function updatedCompanyId(): void
-    {
-        $this->phoneNumberId = null;
-        $this->defaultRvmTemplateId = null;
-        unset($this->availablePhoneNumbers);
-        unset($this->availableRvmTemplates);
     }
 
     public function openAddModal(): void
@@ -135,18 +87,13 @@ class extends Component
     {
         $campaign = Campaign::findOrFail($id);
         $this->editingId = $campaign->id;
-        $this->companyId = $campaign->company_id;
         $this->name = $campaign->name;
         $this->description = $campaign->description ?? '';
         $this->status = $campaign->status;
-        $this->phoneNumberId = $campaign->phone_number_id;
         $this->useLocalPresence = $campaign->use_local_presence;
-        $this->dialerMode = $campaign->dialer_mode ?? 'single';
-        $this->parallelLines = $campaign->parallel_lines ?? 2;
         $this->priority = $campaign->priority ?? 10;
         $this->autoVmDrop = $campaign->auto_vm_drop ?? false;
         $this->defaultRvmTemplateId = $campaign->default_rvm_template_id;
-        unset($this->availablePhoneNumbers);
         unset($this->availableRvmTemplates);
         $this->showModal = true;
     }
@@ -164,35 +111,26 @@ class extends Component
         }
 
         $validated = $this->validate([
-            'companyId' => ['required', 'exists:prospector_companies,id'],
             'name' => [
                 'required',
                 'string',
                 'max:100',
                 Rule::unique('prospector_campaigns', 'name')
-                    ->where('company_id', $this->companyId)
                     ->ignore($this->editingId),
             ],
             'description' => ['nullable', 'string', 'max:1000'],
             'status' => ['required', Rule::in(['draft', 'active', 'paused', 'completed'])],
-            'phoneNumberId' => ['nullable', 'exists:prospector_phone_numbers,id'],
             'useLocalPresence' => ['boolean'],
-            'dialerMode' => ['required', Rule::in(['single', 'parallel'])],
-            'parallelLines' => ['required_if:dialerMode,parallel', 'integer', 'min:1', 'max:3'],
             'priority' => ['required', 'integer', 'min:1', 'max:100'],
             'autoVmDrop' => ['boolean'],
             'defaultRvmTemplateId' => ['nullable', 'exists:prospector_rvm_templates,id'],
         ]);
 
         $data = [
-            'company_id' => $this->companyId,
             'name' => $this->name,
             'description' => $this->description ?: null,
             'status' => $this->status,
-            'phone_number_id' => $this->phoneNumberId,
             'use_local_presence' => $this->useLocalPresence,
-            'dialer_mode' => $this->dialerMode,
-            'parallel_lines' => $this->dialerMode === 'parallel' ? $this->parallelLines : 1,
             'priority' => $this->priority,
             'auto_vm_drop' => $this->autoVmDrop,
             'default_rvm_template_id' => $this->autoVmDrop ? $this->defaultRvmTemplateId : null,
@@ -251,17 +189,18 @@ class extends Component
         $original = Campaign::findOrFail($id);
 
         Campaign::create([
-            'company_id' => $original->company_id,
             'name' => $original->name.' (Copy)',
             'description' => $original->description,
             'status' => 'draft',
-            'phone_number_id' => $original->phone_number_id,
             'use_local_presence' => $original->use_local_presence,
-            'dialer_mode' => $original->dialer_mode,
-            'parallel_lines' => $original->parallel_lines,
             'priority' => $original->priority,
             'auto_vm_drop' => $original->auto_vm_drop,
             'default_rvm_template_id' => $original->default_rvm_template_id,
+            'disposition_routes' => $original->disposition_routes,
+            'max_calls_per_day' => $original->max_calls_per_day,
+            'max_total_attempts' => $original->max_total_attempts,
+            'max_days_in_campaign' => $original->max_days_in_campaign,
+            'min_minutes_between' => $original->min_minutes_between,
             'created_by' => Auth::id(),
         ]);
 
@@ -272,14 +211,10 @@ class extends Component
     protected function resetForm(): void
     {
         $this->editingId = null;
-        $this->companyId = null;
         $this->name = '';
         $this->description = '';
         $this->status = 'draft';
-        $this->phoneNumberId = null;
-        $this->useLocalPresence = false;
-        $this->dialerMode = 'single';
-        $this->parallelLines = 2;
+        $this->useLocalPresence = true;
         $this->priority = 10;
         $this->autoVmDrop = false;
         $this->defaultRvmTemplateId = null;
@@ -313,13 +248,6 @@ class extends Component
             class="max-w-sm"
         />
 
-        <flux:select wire:model.live="filterCompany" class="max-w-[200px]">
-            <flux:select.option value="">{{ __('All Companies') }}</flux:select.option>
-            @foreach ($this->companies as $company)
-                <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
-            @endforeach
-        </flux:select>
-
         <flux:select wire:model.live="filterStatus" class="max-w-[160px]">
             <flux:select.option value="">{{ __('All Statuses') }}</flux:select.option>
             <flux:select.option value="draft">{{ __('Draft') }}</flux:select.option>
@@ -345,10 +273,8 @@ class extends Component
         <flux:table>
             <flux:table.columns>
                 <flux:table.column>{{ __('Campaign') }}</flux:table.column>
-                <flux:table.column>{{ __('Company') }}</flux:table.column>
                 <flux:table.column>{{ __('Status') }}</flux:table.column>
-                <flux:table.column>{{ __('Dialer') }}</flux:table.column>
-                <flux:table.column>{{ __('Phone') }}</flux:table.column>
+                <flux:table.column>{{ __('Local Presence') }}</flux:table.column>
                 <flux:table.column>{{ __('Auto-VM') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Contacts') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Attempted') }}</flux:table.column>
@@ -371,14 +297,6 @@ class extends Component
                         </flux:table.cell>
 
                         <flux:table.cell>
-                            @if ($campaign->company)
-                                <span class="text-sm">{{ $campaign->company->name }}</span>
-                            @else
-                                <span class="text-zinc-400">{{ __('None') }}</span>
-                            @endif
-                        </flux:table.cell>
-
-                        <flux:table.cell>
                             @switch($campaign->status)
                                 @case('draft')
                                     <flux:badge size="sm" color="zinc">{{ __('Draft') }}</flux:badge>
@@ -396,17 +314,10 @@ class extends Component
                         </flux:table.cell>
 
                         <flux:table.cell>
-                            <span class="text-sm capitalize">{{ $campaign->dialer_mode }}</span>
-                            @if ($campaign->dialer_mode === 'parallel')
-                                <span class="text-xs text-zinc-500">({{ $campaign->parallel_lines }}x)</span>
-                            @endif
-                        </flux:table.cell>
-
-                        <flux:table.cell>
-                            @if ($campaign->phoneNumber)
-                                <span class="font-mono text-sm">{{ $campaign->phoneNumber->getDisplayNumber() }}</span>
+                            @if ($campaign->use_local_presence)
+                                <flux:badge size="sm" color="green">{{ __('On') }}</flux:badge>
                             @else
-                                <span class="text-zinc-400">{{ __('Not set') }}</span>
+                                <span class="text-zinc-400">{{ __('Off') }}</span>
                             @endif
                         </flux:table.cell>
 
@@ -479,13 +390,6 @@ class extends Component
                 </flux:text>
             </div>
 
-            <flux:select wire:model.live="companyId" :label="__('Company')" required>
-                <flux:select.option value="">{{ __('Select a company...') }}</flux:select.option>
-                @foreach ($this->companies as $company)
-                    <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
-
             <flux:input
                 wire:model="name"
                 :label="__('Campaign Name')"
@@ -507,33 +411,11 @@ class extends Component
                 <flux:select.option value="completed">{{ __('Completed') }}</flux:select.option>
             </flux:select>
 
-            <flux:select wire:model="phoneNumberId" :label="__('Phone Number')">
-                <flux:select.option value="">{{ __('Select a number...') }}</flux:select.option>
-                @foreach ($this->availablePhoneNumbers as $number)
-                    <flux:select.option value="{{ $number->id }}">
-                        {{ $number->getDisplayNumber() }} {{ $number->friendly_name ? '- '.$number->friendly_name : '' }}
-                    </flux:select.option>
-                @endforeach
-            </flux:select>
-
             <flux:switch
                 wire:model="useLocalPresence"
                 :label="__('Use Local Presence')"
                 :description="__('Match caller ID area code to contact\'s area code when possible.')"
             />
-
-            <flux:select wire:model.live="dialerMode" :label="__('Dialer Mode')" required>
-                <flux:select.option value="single">{{ __('Single Line') }}</flux:select.option>
-                <flux:select.option value="parallel">{{ __('Parallel Lines') }}</flux:select.option>
-            </flux:select>
-
-            @if ($dialerMode === 'parallel')
-                <flux:select wire:model="parallelLines" :label="__('Parallel Lines')">
-                    <flux:select.option value="1">1</flux:select.option>
-                    <flux:select.option value="2">2</flux:select.option>
-                    <flux:select.option value="3">3</flux:select.option>
-                </flux:select>
-            @endif
 
             <flux:input
                 wire:model="priority"
