@@ -4,7 +4,6 @@ use App\Models\Prospector\CallScript;
 use App\Models\Prospector\Campaign;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\CompanyBookingLink;
-use App\Models\Prospector\Contact;
 use App\Models\Prospector\Pipeline;
 use App\Models\Prospector\PipelineStage;
 use App\Models\Prospector\TwilioAccount;
@@ -127,50 +126,21 @@ it('can reorder stages', function () {
 // Pipeline View (Kanban)
 // ──────────────────────────────────────
 
-it('loads pipeline view with default pipeline', function () {
-    $pipeline = Pipeline::factory()->default()->create();
-    $stage = PipelineStage::factory()->forPipeline($pipeline)->create(['name' => 'New Lead']);
-
-    Livewire::test('pages::prospector.pipeline-view')
-        ->assertSet('selectedPipelineId', $pipeline->id)
-        ->assertSee('New Lead');
-});
-
-it('shows contacts in correct stages', function () {
-    $pipeline = Pipeline::factory()->default()->create();
-    $stage1 = PipelineStage::factory()->forPipeline($pipeline)->create(['name' => 'Lead']);
-    $stage2 = PipelineStage::factory()->forPipeline($pipeline)->create(['name' => 'Contacted']);
-
-    $contact1 = Contact::factory()->forCompany($this->company)->create([
-        'first_name' => 'John',
-        'last_name' => 'Doe',
-        'pipeline_stage_id' => $stage1->id,
+it('loads campaign list view', function () {
+    $agent = \App\Models\Prospector\Agent::factory()->create([
+        'user_id' => $this->user->id,
+        'company_id' => $this->company->id,
     ]);
+    $agent->companies()->attach($this->company->id);
 
-    $contact2 = Contact::factory()->forCompany($this->company)->create([
-        'first_name' => 'Jane',
-        'last_name' => 'Smith',
-        'pipeline_stage_id' => $stage2->id,
+    $campaign = Campaign::factory()->create([
+        'company_id' => $this->company->id,
+        'name' => 'New Leads',
+        'status' => 'active',
     ]);
 
     Livewire::test('pages::prospector.pipeline-view')
-        ->assertSee('John Doe')
-        ->assertSee('Jane Smith');
-});
-
-it('can move a contact between stages', function () {
-    $pipeline = Pipeline::factory()->default()->create();
-    $stage1 = PipelineStage::factory()->forPipeline($pipeline)->create();
-    $stage2 = PipelineStage::factory()->forPipeline($pipeline)->create();
-
-    $contact = Contact::factory()->forCompany($this->company)->create([
-        'pipeline_stage_id' => $stage1->id,
-    ]);
-
-    Livewire::test('pages::prospector.pipeline-view')
-        ->call('moveContact', $contact->id, $stage2->id);
-
-    expect($contact->fresh()->pipeline_stage_id)->toBe($stage2->id);
+        ->assertSee('New Leads');
 });
 
 // ──────────────────────────────────────
@@ -352,7 +322,7 @@ it('blocks non-internal users from pipeline page', function () {
         ->assertForbidden();
 });
 
-it('blocks non-internal users from pipeline view', function () {
+it('blocks non-internal users from campaign list view', function () {
     $customer = User::factory()->create(['type' => 'customer']);
 
     $this->actingAs($customer);

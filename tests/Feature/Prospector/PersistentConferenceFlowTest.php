@@ -99,6 +99,12 @@ beforeEach(function () {
 it('completes a full dial cycle: start session → dial → disposition → advance → end', function () {
     Event::fake([DialerCallRinging::class, DialerCallConnected::class, DialerCallEnded::class, ContactDispositioned::class]);
 
+    // Configure routes: not_interested removes, no_answer removes (so contacts advance)
+    $this->campaign->update(['disposition_routes' => [
+        'not_interested' => ['action' => 'remove'],
+        'no_answer' => ['action' => 'remove'],
+    ]]);
+
     // ── 1. Start session ──────────────────────────────────────────────────
     $session = $this->service->startSession($this->agent, $this->campaign);
 
@@ -142,7 +148,7 @@ it('completes a full dial cycle: start session → dial → disposition → adva
     expect($call1->fresh()->status)->toBe('completed');
 
     // Entry should be completed, claim released
-    expect($this->entry1->fresh()->status)->toBe('completed');
+    expect($this->entry1->fresh()->status)->toBe('completed'); // 'not_interested' configured to 'remove'
     expect($this->entry1->fresh()->claimed_by_agent_id)->toBeNull();
 
     // Campaign stats updated
@@ -165,7 +171,7 @@ it('completes a full dial cycle: start session → dial → disposition → adva
     $this->service->disposition($call2, 'no_answer');
 
     expect($call2->fresh()->disposition)->toBe('no_answer');
-    expect($this->entry2->fresh()->status)->toBe('completed');
+    expect($this->entry2->fresh()->status)->toBe('completed'); // 'no_answer' configured to 'remove'
     expect($this->campaign->fresh()->calls_connected)->toBe(1); // no_answer doesn't increment
 
     // ── 7. End session ───────────────────────────────────────────────────
@@ -202,14 +208,19 @@ it('reuses the same conference name for every dial in a session', function () {
 it('returns null from dialNext when no more contacts are callable', function () {
     Event::fake([DialerCallRinging::class, DialerCallConnected::class, DialerCallEnded::class, ContactDispositioned::class]);
 
+    // Configure disposition routes to remove contacts on 'wrong_number'
+    $this->campaign->update(['disposition_routes' => [
+        'wrong_number' => ['action' => 'remove'],
+    ]]);
+
     $session = $this->service->startSession($this->agent, $this->campaign);
 
-    // Drain both contacts
+    // Drain both contacts with a 'remove' disposition
     $call1 = $this->service->dialNext($session);
-    $this->service->disposition($call1, 'no_answer');
+    $this->service->disposition($call1, 'wrong_number');
 
     $call2 = $this->service->dialNext($session->fresh());
-    $this->service->disposition($call2, 'no_answer');
+    $this->service->disposition($call2, 'wrong_number');
 
     // Queue should now be empty
     $call3 = $this->service->dialNext($session->fresh());
