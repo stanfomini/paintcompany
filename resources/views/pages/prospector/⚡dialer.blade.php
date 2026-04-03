@@ -1316,16 +1316,21 @@ class extends Component
         },
 
         async initDialerSession() {
-            // Don't re-create if already initialized (survives Livewire re-renders)
-            if (window.__softphone && window.__softphone.isReady) {
-                this.phoneReady = true;
-                this.phoneCompanyId = window.__softphone.companyId;
-                return;
+            const alreadyInitialized = window.__softphone && window.__softphone.isReady;
+
+            if (!alreadyInitialized) {
+                // First time: create SoftphoneManager and register Device
+                const SoftphoneManager = await window.loadSoftphone();
+                window.__softphone = new SoftphoneManager();
+                await window.__softphone.init();
             }
 
-            const SoftphoneManager = await window.loadSoftphone();
-            window.__softphone = new SoftphoneManager();
             const phone = window.__softphone;
+
+            // ALWAYS re-wire event handlers to the CURRENT Alpine component.
+            // Livewire re-renders destroy/recreate Alpine, so old handlers
+            // point to dead component instances. Clear and re-register every time.
+            phone._listeners = {};
 
             phone.on('ready', (companyId) => {
                 this.phoneReady = true;
@@ -1359,11 +1364,24 @@ class extends Component
                 this.stopTimer();
             });
 
-            await phone.init();
+            // Sync Alpine state from the live softphone
+            if (alreadyInitialized) {
+                this.phoneReady = phone.isReady;
+                this.phoneCompanyId = phone.companyId;
+                this.phoneState = phone.state;
+            }
 
-            // Load DialerSession module and wire events
-            const DialerSessionClass = await window.loadDialerSession();
-            window.__dialerSession = new DialerSessionClass(phone, $wire);
+            // DialerSession: create once, re-wire handlers every render
+            if (!window.__dialerSession) {
+                const DialerSessionClass = await window.loadDialerSession();
+                window.__dialerSession = new DialerSessionClass(phone, $wire);
+            } else {
+                // Update $wire reference for the current Livewire component
+                window.__dialerSession._wire = $wire;
+            }
+
+            // Clear and re-wire DialerSession handlers
+            window.__dialerSession._listeners = {};
 
             window.__dialerSession.on('state-change', (state) => {
                 this.sessionState = state;
@@ -1386,6 +1404,12 @@ class extends Component
             window.__dialerSession.on('session-ended', () => {
                 this.stopTimer();
             });
+
+            // Sync session state from live DialerSession
+            this.sessionState = window.__dialerSession.state;
+            if (window.__dialerSession.isActive) {
+                this.autoDial = window.__dialerSession.isAutoDialing;
+            }
         },
 
         async startSession() {
