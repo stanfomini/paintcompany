@@ -131,8 +131,10 @@ class TwilioVoiceController extends Controller
             $dial = $response->dial();
             $dial->conference($conferenceName, [
                 'startConferenceOnEnter' => true,
-                'endConferenceOnExit' => true,
+                'endConferenceOnExit' => false,
                 'beep' => false,
+                'statusCallback' => route('prospector.webhook.twilio.conference.status'),
+                'statusCallbackEvent' => 'join leave end',
             ]);
 
             return $this->twimlResponse($response);
