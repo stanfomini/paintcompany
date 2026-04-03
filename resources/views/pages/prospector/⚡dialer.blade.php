@@ -2857,7 +2857,7 @@ class extends Component
                                     size="sm"
                                     variant="filled"
                                     icon="microphone"
-                                    x-on:click="$wire.dropVoicemail(document.getElementById('rvm-template-select').value)"
+                                    x-on:click="dropVm()"
                                 >
                                     Drop VM
                                 </flux:button>
