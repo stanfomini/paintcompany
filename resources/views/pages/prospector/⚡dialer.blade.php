@@ -1411,12 +1411,14 @@ class extends Component
                 this.stopTimer();
             });
 
-            // Sync Alpine state from the live softphone (survives Livewire re-renders)
-            if (alreadyInitialized) {
-                this.phoneReady = phone.isReady;
-                this.phoneCompanyId = phone.companyId;
-                this.phoneState = phone.state;
-                this.phoneError = phone.isReady ? null : (this.phoneError || null);
+            // Sync Alpine state from the live softphone.
+            // MUST run on first init too — the 'ready' event fires during init()
+            // before Alpine handlers are wired, so phoneReady would stay false.
+            this.phoneReady = phone.isReady;
+            this.phoneCompanyId = phone.companyId;
+            this.phoneState = phone.state;
+            if (phone.isReady) {
+                this.phoneError = null;
             }
 
             // DialerSession: create once, re-wire handlers every render
