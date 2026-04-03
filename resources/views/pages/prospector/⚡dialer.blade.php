@@ -1282,9 +1282,10 @@ class extends Component
 }; ?>
 
 {{-- SoftphoneManager + DialerSession stored outside Alpine to avoid Proxy conflicts --}}
+{{-- IMPORTANT: Only initialize if not already set — Livewire re-renders re-execute this script --}}
 <script>
-    window.__softphone = null;
-    window.__dialerSession = null;
+    if (window.__softphone === undefined) window.__softphone = null;
+    if (window.__dialerSession === undefined) window.__dialerSession = null;
 </script>
 
 <div
