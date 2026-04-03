@@ -110,6 +110,26 @@ class DialerOrchestrationService
             $session->abandon();
         }
 
+        // Release any contacts still claimed by this agent's session.
+        // Prevents contacts getting stuck in 'dialing' when a session
+        // ends unexpectedly (crash, page close, re-render).
+        $released = CampaignContact::where('campaign_id', $session->campaign_id)
+            ->where('claimed_by_agent_id', $session->agent_id)
+            ->whereIn('status', ['dialing', 'queued'])
+            ->update(['status' => 'queued', 'claimed_by_agent_id' => null]);
+
+        if ($released > 0) {
+            Log::info('DialerOrchestration: released stale claims on session end', [
+                'session_id' => $session->id,
+                'released' => $released,
+            ]);
+
+            broadcast(new QueueUpdated(
+                companyId: $session->agent->company_id,
+                action: 'session_ended',
+            ));
+        }
+
         $this->agentStateService->setStatus($session->agent, 'offline');
 
         Log::info('DialerOrchestration: session ended', [
