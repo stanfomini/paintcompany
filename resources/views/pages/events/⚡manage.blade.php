@@ -51,8 +51,6 @@ class extends Component
     public string $guestInstructions = '';
 
     // Scene/overlay editing
-    public string $overlayText = '';
-
     public string $templateName = '';
 
     // Backstage chat
@@ -123,8 +121,22 @@ class extends Component
         // Reset any live guests back to connected so they can be re-brought-on after redirect
         $this->event->guests()->where('status', 'live')->update(['status' => 'connected']);
 
-        $liveEventService = app(LiveEventService::class);
-        $liveEventService->goLive($this->event);
+        try {
+            $liveEventService = app(LiveEventService::class);
+            $liveEventService->goLive($this->event);
+        } catch (\Throwable $e) {
+            session()->flash('error', __('Failed to start live stream. Please try again.'));
+
+            return;
+        }
+
+        $this->event->refresh();
+
+        if ($this->event->status !== 'live') {
+            session()->flash('error', __('Failed to go live. Please try again.'));
+
+            return;
+        }
 
         // Redirect to force a clean page load — the live template is different from setup.
         // Guests will need to be brought on again after the page reloads.
@@ -452,18 +464,6 @@ class extends Component
     }
 
     #[Renderless]
-    public function updateOverlays(array $overlays): void
-    {
-        foreach ($overlays as $overlay) {
-            if (! isset($overlay['type'])) {
-                return;
-            }
-        }
-
-        $this->event->update(['overlays' => $overlays]);
-    }
-
-    #[Renderless]
     public function toggleFrameMode(): void
     {
         $this->event->update(['use_frame_mode' => ! $this->event->use_frame_mode]);
@@ -471,19 +471,15 @@ class extends Component
     }
 
     #[Renderless]
-    public function saveAsTemplate(array $scenes = [], array $overlays = []): void
+    public function saveAsTemplate(array $sceneData = []): void
     {
         $this->validate([
             'templateName' => 'required|string|max:255',
         ]);
 
-        // Use Alpine-provided data if available (live state), fall back to DB (pre-live state)
-        $scenesToSave = ! empty($scenes) ? $scenes : $this->event->getScenesOrDefaults();
-        $overlaysToSave = ! empty($overlays) ? $overlays : ($this->event->overlays ?? []);
-
-        // Validate scene structure before saving
-        foreach ($scenesToSave as $scene) {
-            if (! isset($scene['name'], $scene['slots'])) {
+        if (empty($sceneData) || ! isset($sceneData['name'], $sceneData['slots'])) {
+            $sceneData = $this->event->getScenesOrDefaults()[0] ?? [];
+            if (empty($sceneData)) {
                 return;
             }
         }
@@ -491,8 +487,8 @@ class extends Component
         $template = LiveEventSceneTemplate::create([
             'user_id' => auth()->id(),
             'name' => $this->templateName,
-            'scenes' => $scenesToSave,
-            'overlays' => $overlaysToSave,
+            'base_layout' => $sceneData['base_layout'] ?? null,
+            'scene_data' => $sceneData,
         ]);
 
         $this->reset('templateName');
@@ -500,31 +496,29 @@ class extends Component
         $this->dispatch('template-saved', id: $template->id, name: $template->name);
     }
 
-    #[Renderless]
     public function loadTemplate(int $templateId): void
     {
         $template = LiveEventSceneTemplate::where('user_id', auth()->id())->findOrFail($templateId);
 
-        // Validate template data before loading
-        $scenes = $template->scenes ?? [];
-        foreach ($scenes as $scene) {
-            if (! isset($scene['name'], $scene['slots'])) {
-                return;
-            }
+        $sceneData = $template->scene_data ?? [];
+        if (empty($sceneData) || ! isset($sceneData['name'], $sceneData['slots'])) {
+            return;
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($template, $scenes) {
-            $this->event->update([
-                'scenes' => $scenes,
-                'overlays' => $template->overlays,
-                'active_scene_index' => 0,
-            ]);
-        });
+        if (! isset($sceneData['overlays'])) {
+            $sceneData['overlays'] = [];
+        }
+
+        $scenes = $this->event->scenes ?? $this->event->getScenesOrDefaults();
+        $scenes[] = $sceneData;
+
+        $this->event->update([
+            'scenes' => $scenes,
+        ]);
 
         $this->event->refresh();
 
-        // Push loaded data to Alpine so compositors update
-        $this->dispatch('template-loaded', scenes: $this->event->getScenesOrDefaults(), overlays: $this->event->overlays ?? []);
+        $this->dispatch('template-loaded', scenes: $this->event->getScenesOrDefaults());
     }
 
     #[Renderless]
@@ -536,45 +530,6 @@ class extends Component
 
         unset($this->sceneTemplates);
         $this->dispatch('template-deleted', id: $templateId);
-    }
-
-    #[Renderless]
-    public function addTextOverlay(): void
-    {
-        $this->validate([
-            'overlayText' => 'required|string|max:500',
-        ]);
-
-        $overlays = $this->event->overlays ?? [];
-        $overlay = [
-            'type' => 'text',
-            'content' => $this->overlayText,
-            'x' => 0.05,
-            'y' => 0.02,
-            'fontSize' => 28,
-            'fontWeight' => '700',
-            'color' => '#ffffff',
-            'bg' => '#000000cc',
-        ];
-        $overlays[] = $overlay;
-
-        $this->event->update(['overlays' => $overlays]);
-        $this->event->refresh();
-        $this->dispatch('overlay-added', overlay: $overlay);
-        $this->reset('overlayText');
-    }
-
-    #[Renderless]
-    public function removeOverlay(int $index): void
-    {
-        $overlays = $this->event->overlays ?? [];
-
-        if (isset($overlays[$index])) {
-            unset($overlays[$index]);
-            $this->event->update(['overlays' => array_values($overlays)]);
-            $this->event->refresh();
-            $this->dispatch('overlay-removed', index: $index);
-        }
     }
 
     // ─── Backstage Chat ─────────────────────────────────────────────
@@ -918,35 +873,29 @@ class extends Component
                             @error('templateName') <span class="mt-1 text-xs text-red-500">{{ $message }}</span> @enderror
                         </div>
 
-                        {{-- Overlay Editor --}}
+                        {{-- Overlay Display (read-only — managed during live session) --}}
                         <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
                             <flux:heading size="sm" class="mb-3">{{ __('Overlays') }}</flux:heading>
 
-                            {{-- Current overlays --}}
-                            @if (! empty($event->overlays))
+                            @php
+                                $activeScene = ($event->scenes ?? [])[0] ?? null;
+                                $sceneOverlays = $activeScene['overlays'] ?? [];
+                            @endphp
+
+                            @if (! empty($sceneOverlays))
                                 <div class="mb-3 space-y-2">
-                                    @foreach ($event->overlays as $index => $overlay)
+                                    @foreach ($sceneOverlays as $index => $overlay)
                                         <div class="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
                                             <span class="text-sm text-zinc-700 dark:text-zinc-300 truncate">
                                                 <flux:badge size="sm" color="zinc" class="mr-1">{{ ucfirst($overlay['type'] ?? 'text') }}</flux:badge>
                                                 {{ $overlay['content'] ?? '' }}
                                             </span>
-                                            <flux:button size="xs" variant="ghost" icon="trash" wire:click="removeOverlay({{ $index }})" />
                                         </div>
                                     @endforeach
                                 </div>
                             @else
-                                <flux:text class="mb-3 text-sm">{{ __('No overlays configured.') }}</flux:text>
+                                <flux:text class="text-sm text-zinc-400">{{ __('No overlays configured. Add overlays during the live session.') }}</flux:text>
                             @endif
-
-                            {{-- Add text overlay --}}
-                            <form wire:submit="addTextOverlay" class="flex items-center gap-2">
-                                <flux:input wire:model="overlayText" placeholder="{{ __('Overlay text...') }}" size="sm" class="flex-1" />
-                                <flux:button type="submit" size="sm" variant="primary" icon="plus" wire:loading.attr="disabled">
-                                    {{ __('Add') }}
-                                </flux:button>
-                            </form>
-                            @error('overlayText') <span class="mt-1 text-xs text-red-500">{{ $message }}</span> @enderror
 
                             {{-- Frame mode toggle --}}
                             <div class="mt-4 flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
@@ -1132,7 +1081,6 @@ class extends Component
         @php
             $scenes = $event->getScenesOrDefaults();
             $activeSceneIndex = $event->active_scene_index ?? 0;
-            $overlays = $event->overlays ?? [];
             $connectedGuests = $this->guests->whereIn('status', ['connected', 'live']);
         @endphp
         <div
@@ -1141,7 +1089,6 @@ class extends Component
                 scenes = @js($scenes);
                 liveSceneIndex = @js($activeSceneIndex);
                 previewSceneIndex = @js($activeSceneIndex);
-                overlayConfigs = @js($overlays);
                 liveGuests = @js($connectedGuests->merge($this->guests)->unique('id')->map(fn ($g) => ['id' => $g->id, 'name' => $g->name, 'status' => $g->status, 'slot_number' => $g->slot_number, 'identity' => $g->getLivekitIdentity()])->values()->toArray());
                 @if ($livekitToken)
                     startStudio(@js($livekitToken), @js($livekitUrl), @js($event->id));
@@ -1369,7 +1316,7 @@ class extends Component
                         <span class="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{{ __('Overlays') }}</span>
                     </div>
                     {{-- List of overlays with toggle/edit/remove --}}
-                    <template x-for="(overlay, idx) in overlayConfigs" :key="idx">
+                    <template x-for="(overlay, idx) in currentOverlays" :key="idx">
                         <div class="flex items-center gap-2 py-1">
                             <button @click="toggleOverlayVisibility(idx)"
                                     class="size-3 rounded-full shrink-0"
@@ -1379,7 +1326,7 @@ class extends Component
                             <button @click="removeOverlay(idx)" class="text-xs text-zinc-500 hover:text-red-400">&times;</button>
                         </div>
                     </template>
-                    <div x-show="overlayConfigs.length === 0" class="py-1">
+                    <div x-show="currentOverlays.length === 0" class="py-1">
                         <span class="text-[10px] text-zinc-600">{{ __('No overlays. Add one below.') }}</span>
                     </div>
                     {{-- Add buttons --}}
@@ -2014,6 +1961,7 @@ class extends Component
             let overlayRenderer = null;
             let captionEngine = null;
             let canvasEditor = null;
+            let guestAudioTracks = new Map();
 
             // Position preset lookup
             const POSITION_PRESETS = {
@@ -2040,8 +1988,11 @@ class extends Component
                 previewSceneIndex: 0,
                 liveSceneIndex: 0,
                 scenes: [],
-                overlayConfigs: [],
                 screenStream: null,
+
+                get currentOverlays() {
+                    return this.scenes[this.previewSceneIndex]?.overlays || [];
+                },
 
                 // Editor state
                 editorMode: false,
@@ -2116,17 +2067,21 @@ class extends Component
                         this.liveGuests = guests;
                     });
 
-                    this.$wire.on('template-loaded', ({ scenes, overlays }) => {
+                    this.$wire.on('template-loaded', ({ scenes }) => {
                         this.scenes = scenes;
-                        this.overlayConfigs = overlays;
-                        this.previewSceneIndex = 0;
-                        const scene = this.scenes[0];
-                        if (previewCompositor && scene) previewCompositor.setScene(scene);
-                        if (programCompositor && scene) programCompositor.setScene(scene);
-                        if (previewCompositor) previewCompositor.setOverlays([...this.overlayConfigs]);
-                        if (programCompositor) programCompositor.setOverlays([...this.overlayConfigs]);
-                        if (canvasEditor && this.editorMode) {
-                            canvasEditor.setSlots(scene?.slots || []);
+                        this.previewSceneIndex = Math.min(this.previewSceneIndex, scenes.length - 1);
+                        const scene = this.scenes[this.previewSceneIndex];
+                        if (previewCompositor && scene) {
+                            previewCompositor.setScene(scene);
+                            previewCompositor.setOverlays(scene.overlays || []);
+                        }
+                        if (programCompositor && this.scenes[this.liveSceneIndex]) {
+                            programCompositor.setScene(this.scenes[this.liveSceneIndex]);
+                            programCompositor.setOverlays(this.scenes[this.liveSceneIndex].overlays || []);
+                        }
+                        if (canvasEditor && this.editorMode && scene) {
+                            canvasEditor.setSlots(scene.slots || []);
+                            canvasEditor.setOverlays(scene.overlays || []);
                             this.selectedItem = null;
                         }
                         console.log('[Studio] Template loaded:', scenes.length, 'scenes');
@@ -2176,7 +2131,10 @@ class extends Component
                 // --- Template helpers ---
 
                 saveTemplate() {
-                    this.$wire.saveAsTemplate(this.scenes, this.overlayConfigs);
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (scene) {
+                        this.$wire.saveAsTemplate(scene);
+                    }
                 },
 
                 loadTemplate(templateId) {
@@ -2244,9 +2202,9 @@ class extends Component
                         previewCompositor.setScene(scene);
                         programCompositor.setScene(scene);
 
-                        if (this.overlayConfigs.length > 0) {
-                            programCompositor.setOverlays(this.overlayConfigs);
-                            previewCompositor.setOverlays(this.overlayConfigs);
+                        if (scene?.overlays?.length > 0) {
+                            programCompositor.setOverlays(scene.overlays);
+                            previewCompositor.setOverlays(scene.overlays);
                         }
 
                         previewCompositor.start();
@@ -2264,7 +2222,8 @@ class extends Component
                         if (programCompositor) programCompositor.setOverlayRenderer(overlayRenderer);
                         if (previewCompositor) previewCompositor.setOverlayRenderer(overlayRenderer);
 
-                        this.overlayConfigs.forEach((overlay, idx) => {
+                        const initScene = this.scenes[this.liveSceneIndex] ?? this.scenes[0];
+                        (initScene?.overlays || []).forEach((overlay, idx) => {
                             if (overlay.type === 'html' && overlay.visible !== false) {
                                 overlayRenderer.addOverlay(idx, overlay);
                             }
@@ -2378,7 +2337,12 @@ class extends Component
                         if (track.kind === 'audio') {
                             // Guest audio is automatically forwarded to all subscribers by LiveKit
                             // Viewers hear it directly — no need to re-publish
-                            console.log(`[Studio] Guest audio from LiveKit: ${participant.identity}`);
+                            const name = participant.name || guestId;
+                            guestAudioTracks.set(guestId, track.mediaStreamTrack);
+                            if (captionEngine) {
+                                captionEngine.addSource(guestId, track.mediaStreamTrack, name);
+                            }
+                            console.log(`[Studio] Guest audio from LiveKit: ${guestId} (${name})`);
                         }
                     });
 
@@ -2390,6 +2354,12 @@ class extends Component
                             const slotKey = this._guestSlotKey(participant.identity);
                             if (sourceManager) sourceManager.removeSource(slotKey);
                             console.log(`[Studio] Guest video removed: ${slotKey}`);
+                        }
+
+                        if (track.kind === 'audio') {
+                            guestAudioTracks.delete(participant.identity);
+                            if (captionEngine) captionEngine.removeSource(participant.identity);
+                            console.log(`[Studio] Guest audio removed: ${participant.identity}`);
                         }
                     });
 
@@ -2440,29 +2410,32 @@ class extends Component
                 previewScene(index) {
                     this.previewSceneIndex = index;
                     const scene = this.scenes[index];
-                    if (previewCompositor && scene) {
+                    if (!scene) return;
+
+                    if (previewCompositor) {
                         previewCompositor.setScene(scene);
+                        previewCompositor.setOverlays(scene.overlays || []);
                     }
-                    // Load per-version overlays if they exist, otherwise keep global
-                    if (scene?.overlays) {
-                        this.overlayConfigs = scene.overlays;
-                        if (previewCompositor) previewCompositor.setOverlays([...scene.overlays]);
-                    }
-                    // Sync editor handles if in editor mode
-                    if (canvasEditor && this.editorMode && scene) {
+
+                    if (canvasEditor && this.editorMode) {
                         canvasEditor.setSlots(scene.slots || []);
-                        canvasEditor.setOverlays(scene.overlays || this.overlayConfigs || []);
+                        canvasEditor.setOverlays(scene.overlays || []);
                         this.selectedItem = null;
                     }
                 },
 
                 take() {
                     this.liveSceneIndex = this.previewSceneIndex;
+                    const scene = this.scenes[this.liveSceneIndex];
+                    if (!scene) return;
+
                     if (programCompositor) {
-                        programCompositor.setScene(this.scenes[this.liveSceneIndex]);
+                        programCompositor.setScene(scene);
+                        programCompositor.setOverlays(scene.overlays || []);
                     }
+
                     this.$wire.switchScene(this.liveSceneIndex);
-                    console.log('[Studio] TAKE:', this.scenes[this.liveSceneIndex]?.name);
+                    console.log('[Studio] TAKE:', scene.name);
                 },
 
                 // ==============================================================
@@ -2539,6 +2512,7 @@ class extends Component
                                 if (scene?.slots?.[index]) {
                                     Object.assign(scene.slots[index], { x, y, w, h });
                                     if (previewCompositor) previewCompositor.setScene(scene);
+                                    this._autoSave();
                                 }
                             });
 
@@ -2546,9 +2520,8 @@ class extends Component
                                 const scene = this.scenes[this.previewSceneIndex];
                                 if (scene?.overlays?.[index]) {
                                     Object.assign(scene.overlays[index], { x, y, w, h });
-                                    if (previewCompositor) {
-                                        previewCompositor.setOverlays(scene.overlays);
-                                    }
+                                    if (previewCompositor) previewCompositor.setOverlays(scene.overlays);
+                                    this._autoSave();
                                 }
                             });
 
@@ -2561,14 +2534,12 @@ class extends Component
                         const scene = this.scenes[this.previewSceneIndex];
                         if (scene) {
                             canvasEditor.setSlots(scene.slots || []);
-                            canvasEditor.setOverlays(scene.overlays || this.overlayConfigs || []);
+                            canvasEditor.setOverlays(scene.overlays || []);
                         }
                         canvasEditor.enable();
                     } else {
                         if (canvasEditor) canvasEditor.disable();
                         this.selectedItem = null;
-                        // Persist the modified scene
-                        this.$wire.updateScenes(this.scenes);
                     }
                 },
 
@@ -2580,7 +2551,7 @@ class extends Component
                         const slot = scene?.slots?.[index];
                         return `Slot ${slot?.label || String.fromCharCode(65 + index)}: ${slot?.source || '(none)'}`;
                     } else {
-                        const overlay = scene?.overlays?.[index] ?? this.overlayConfigs?.[index];
+                        const overlay = scene?.overlays?.[index];
                         return overlay ? `${overlay.type}: ${overlay.content || overlay.src || ''}`.substring(0, 40) : 'Overlay';
                     }
                 },
@@ -2590,13 +2561,13 @@ class extends Component
                     const { type, index } = this.selectedItem;
                     const scene = this.scenes[this.previewSceneIndex];
                     if (type === 'slot') return scene?.slots?.[index]?.[prop];
-                    return (scene?.overlays?.[index] ?? this.overlayConfigs?.[index])?.[prop];
+                    return scene?.overlays?.[index]?.[prop];
                 },
 
                 getSelectedOverlay() {
                     if (!this.selectedItem || this.selectedItem.type !== 'overlay') return null;
                     const scene = this.scenes[this.previewSceneIndex];
-                    return scene?.overlays?.[this.selectedItem.index] ?? this.overlayConfigs?.[this.selectedItem.index];
+                    return scene?.overlays?.[this.selectedItem.index];
                 },
 
                 updateSelectedProperty(prop, value) {
@@ -2610,7 +2581,7 @@ class extends Component
                         if (previewCompositor) previewCompositor.setScene(scene);
                         if (canvasEditor) canvasEditor.setSlots(scene.slots);
                     } else if (type === 'overlay') {
-                        if (!scene.overlays) scene.overlays = [...(this.overlayConfigs || [])];
+                        if (!scene.overlays) scene.overlays = [];
                         if (scene.overlays[index]) {
                             scene.overlays[index][prop] = value;
                             if (previewCompositor) previewCompositor.setOverlays(scene.overlays);
@@ -2676,6 +2647,7 @@ class extends Component
                             source: scene.slots?.[i]?.source ?? null,
                         }));
                         if (previewCompositor) previewCompositor.setScene(scene);
+                        this._autoSave();
                     }
                 },
 
@@ -2686,6 +2658,7 @@ class extends Component
                     if (scene && scene.slots?.[slotIndex]) {
                         scene.slots[slotIndex].source = sourceKey || null;
                         if (previewCompositor) previewCompositor.setScene(scene);
+                        this._autoSave();
                     }
                 },
 
@@ -2755,13 +2728,21 @@ class extends Component
                         });
                     }
 
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (!scene) return;
+                    if (!scene.overlays) scene.overlays = [];
+
                     if (this.editOverlayIndex !== null && this.editOverlayIndex >= 0) {
-                        this.overlayConfigs[this.editOverlayIndex] = overlay;
+                        scene.overlays[this.editOverlayIndex] = overlay;
                     } else {
-                        this.overlayConfigs.push(overlay);
+                        scene.overlays.push(overlay);
                     }
 
-                    this._syncOverlays();
+                    if (previewCompositor) previewCompositor.setOverlays([...scene.overlays]);
+                    if (programCompositor && this.previewSceneIndex === this.liveSceneIndex) {
+                        programCompositor.setOverlays([...scene.overlays]);
+                    }
+                    this._autoSave();
 
                     // Auto-start caption engine when a caption overlay is added
                     if (type === 'caption' && !captionEngine) {
@@ -2773,7 +2754,7 @@ class extends Component
                 },
 
                 editOverlay(idx) {
-                    const overlay = this.overlayConfigs[idx];
+                    const overlay = this.currentOverlays[idx];
                     if (!overlay) return;
 
                     this.editOverlayIndex = idx;
@@ -2801,28 +2782,27 @@ class extends Component
                     $flux.modal('overlay-' + overlay.type + '-modal').show();
                 },
 
-                removeOverlay(idx) {
-                    this.overlayConfigs.splice(idx, 1);
-                    // Unregister HTML overlay from renderer
-                    if (overlayRenderer) overlayRenderer.removeOverlay(idx);
-                    this._syncOverlays();
+                removeOverlay(index) {
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (!scene) return;
+                    scene.overlays.splice(index, 1);
+                    if (previewCompositor) previewCompositor.setOverlays([...scene.overlays]);
+                    if (programCompositor && this.previewSceneIndex === this.liveSceneIndex) {
+                        programCompositor.setOverlays([...scene.overlays]);
+                    }
+                    if (overlayRenderer) overlayRenderer.removeOverlay(index);
+                    this._autoSave();
                 },
 
-                toggleOverlayVisibility(idx) {
-                    const overlay = this.overlayConfigs[idx];
-                    if (!overlay) return;
-                    overlay.visible = !(overlay.visible !== false);
-
-                    // Toggle HTML overlay in renderer
-                    if (overlay.type === 'html' && overlayRenderer) {
-                        if (overlay.visible) {
-                            overlayRenderer.addOverlay(idx, overlay);
-                        } else {
-                            overlayRenderer.removeOverlay(idx);
-                        }
+                toggleOverlayVisibility(index) {
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (!scene?.overlays?.[index]) return;
+                    scene.overlays[index].visible = !scene.overlays[index].visible;
+                    if (previewCompositor) previewCompositor.setOverlays([...scene.overlays]);
+                    if (programCompositor && this.previewSceneIndex === this.liveSceneIndex) {
+                        programCompositor.setOverlays([...scene.overlays]);
                     }
-
-                    this._syncOverlays();
+                    this._autoSave();
                 },
 
                 overlayLabel(overlay) {
@@ -2835,30 +2815,6 @@ class extends Component
                     }
                 },
 
-                _syncOverlays() {
-                    // Update compositors
-                    if (programCompositor) programCompositor.setOverlays([...this.overlayConfigs]);
-                    if (previewCompositor) previewCompositor.setOverlays([...this.overlayConfigs]);
-
-                    // Register HTML overlays with renderer
-                    if (overlayRenderer) {
-                        this.overlayConfigs.forEach((overlay, idx) => {
-                            if (overlay.type === 'html' && overlay.visible !== false) {
-                                overlayRenderer.addOverlay(idx, overlay);
-                            }
-                        });
-                    }
-
-                    // Save overlays to the current scene version (per-version storage)
-                    const scene = this.scenes[this.previewSceneIndex];
-                    if (scene) {
-                        scene.overlays = [...this.overlayConfigs];
-                        this.$wire.updateScenes(this.scenes);
-                    }
-                    // Also update global overlays for backward compat
-                    this.$wire.updateOverlays(this.overlayConfigs);
-                },
-
                 // ==============================================================
                 // Caption Engine
                 // ==============================================================
@@ -2868,9 +2824,13 @@ class extends Component
                         const CaptionEngineClass = await window.loadCaptionEngine();
                         captionEngine = new CaptionEngineClass();
 
+                        const guests = new Map();
+                        for (const [id, track] of guestAudioTracks) {
+                            guests.set(id, { track, name: id });
+                        }
                         const audioSources = {
                             host: hostAudioTrack ? { track: hostAudioTrack, name: 'Host' } : null,
-                            guests: new Map(),
+                            guests,
                         };
 
                         captionEngine.onCaption(({ speaker, text }) => {
@@ -2941,6 +2901,13 @@ class extends Component
                             identity: guestId,
                         });
                     }
+                },
+
+                _autoSave() {
+                    clearTimeout(this._saveTimer);
+                    this._saveTimer = setTimeout(() => {
+                        this.$wire.updateScenes(this.scenes);
+                    }, 500);
                 },
 
                 _updateViewerCount() {
