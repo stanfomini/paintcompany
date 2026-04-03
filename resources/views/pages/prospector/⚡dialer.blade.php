@@ -1662,7 +1662,10 @@ class extends Component
                     })
                     .listen('.dialer.call.ended', (e) => {
                         this.stopTimer();
-                        this.hangUp();
+                        // Do NOT call hangUp() here — in persistent conference mode,
+                        // the agent stays in the conference between calls. The contact
+                        // already left. Calling hangUp() would disconnect the agent's
+                        // WebRTC and break auto-dial.
                         $wire.onCallEnded(e);
                         if (window.__dialerSession) {
                             if (e.disposition === 'no_answer' || e.disposition === 'busy') {
