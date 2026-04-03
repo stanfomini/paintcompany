@@ -174,8 +174,9 @@ class ProspectorWebhookController extends Controller
                 }
             }
 
-            // Auto-VM drop if campaign has it enabled
-            $this->attemptAutoVmDrop($call);
+            // Machine detected — either play VM template or hang up the contact's call.
+            // NEVER leave the call connected to the conference (would record session audio).
+            $this->handleMachineDetected($call);
 
             broadcast(new DialerCallEnded($call->fresh(), $call->agent_id));
         }
@@ -184,45 +185,62 @@ class ProspectorWebhookController extends Controller
     }
 
     /**
-     * Attempt automatic voicemail drop when AMD detects a machine.
+     * Handle machine detection — play VM template or hang up the contact's call.
      *
-     * Instead of making a new outbound call (RvmService::drop), play the
-     * pre-recorded audio directly on the contact's EXISTING call leg,
-     * then let the call end naturally after playback.
+     * CRITICAL: The contact's call must ALWAYS be terminated when a machine is detected.
+     * If a company has a default RVM template, play it on the call then hang up.
+     * If no template is configured, just hang up immediately.
+     * Under NO circumstance should the call stay connected to the conference
+     * (the contact's voicemail would record the agent's session audio).
      */
-    private function attemptAutoVmDrop(Call $call): void
+    private function handleMachineDetected(Call $call): void
     {
         $call->loadMissing(['contact.company.defaultRvmTemplate']);
 
+        $conferenceService = app(ConferenceService::class);
         $contact = $call->contact;
-
-        if (! $contact || ! $contact->company) {
-            return;
-        }
-
-        $template = $contact->company->defaultRvmTemplate;
-
-        if (! $template || ! $template->audio_path) {
-            return;
-        }
+        $template = $contact?->company?->defaultRvmTemplate;
 
         try {
-            $audioUrl = ConferenceService::getPublicAudioUrl($template);
-            $conferenceService = app(ConferenceService::class);
-            $conferenceService->playAudioOnCall($call->twilio_call_sid, $audioUrl);
+            if ($template && $template->audio_path) {
+                // Play VM template on the contact's call, then hang up
+                $audioUrl = ConferenceService::getPublicAudioUrl($template);
+                $conferenceService->playAudioOnCall($call->twilio_call_sid, $audioUrl);
 
-            $call->update([
-                'disposition' => 'voicemail',
-                'disposition_notes' => 'Auto VM drop',
-            ]);
+                $call->update([
+                    'disposition' => 'voicemail',
+                    'disposition_notes' => 'Auto VM drop',
+                ]);
 
-            Log::info('Auto-VM dropped on active call', [
-                'call_id' => $call->id,
-                'template_id' => $template->id,
-                'audio_url' => $audioUrl,
-            ]);
+                Log::info('Auto-VM dropped on active call', [
+                    'call_id' => $call->id,
+                    'template_id' => $template->id,
+                ]);
+            } else {
+                // No template — just hang up the contact's call immediately
+                $client = $conferenceService->getDefaultClient();
+                $client->calls($call->twilio_call_sid)->update(['status' => 'completed']);
+
+                $call->update([
+                    'disposition' => 'voicemail',
+                    'disposition_notes' => 'Machine detected, no VM template',
+                ]);
+
+                Log::info('Machine detected — no VM template, hung up contact call', [
+                    'call_id' => $call->id,
+                    'company_id' => $contact?->company_id,
+                ]);
+            }
         } catch (\Exception $e) {
-            Log::warning('Auto-VM drop failed', [
+            // Last resort: try to end the call even if the above failed
+            try {
+                $client = $conferenceService->getDefaultClient();
+                $client->calls($call->twilio_call_sid)->update(['status' => 'completed']);
+            } catch (\Exception $e2) {
+                // Call may have already ended
+            }
+
+            Log::warning('Machine detection call cleanup failed', [
                 'call_id' => $call->id,
                 'error' => $e->getMessage(),
             ]);

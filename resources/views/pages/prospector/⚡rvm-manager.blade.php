@@ -221,6 +221,18 @@ class extends Component
         $this->showDeleteModal = true;
     }
 
+    public function setAsCompanyDefault(int $templateId): void
+    {
+        $template = RvmTemplate::findOrFail($templateId);
+
+        if ($template->company_id) {
+            Company::where('id', $template->company_id)
+                ->update(['default_rvm_template_id' => $template->id]);
+        }
+
+        $this->clearCaches();
+    }
+
     public function deleteTemplate(): void
     {
         if (! $this->deletingId) {
@@ -514,7 +526,12 @@ class extends Component
                             </flux:table.cell>
 
                             <flux:table.cell>
-                                {{ $template->company?->name ?? '-' }}
+                                <div class="flex items-center gap-1.5">
+                                    <span>{{ $template->company?->name ?? '-' }}</span>
+                                    @if ($template->company && $template->company->default_rvm_template_id === $template->id)
+                                        <flux:badge size="sm" color="green">Default</flux:badge>
+                                    @endif
+                                </div>
                             </flux:table.cell>
 
                             <flux:table.cell>
@@ -547,6 +564,9 @@ class extends Component
                                             wire:click="toggleAudioPreview({{ $template->id }})"
                                             title="{{ $playingTemplateId === $template->id ? __('Stop') : __('Preview') }}"
                                         />
+                                    @endif
+                                    @if ($template->company && $template->company->default_rvm_template_id !== $template->id)
+                                        <flux:button size="sm" variant="ghost" icon="star" wire:click="setAsCompanyDefault({{ $template->id }})" title="{{ __('Set as Company Default') }}" />
                                     @endif
                                     <flux:button size="sm" variant="ghost" icon="paper-airplane" wire:click="openSendModal({{ $template->id }})" title="{{ __('Send RVM') }}" />
                                     <flux:button size="sm" variant="ghost" icon="pencil" wire:click="editTemplate({{ $template->id }})" title="{{ __('Edit') }}" />

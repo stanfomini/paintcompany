@@ -568,7 +568,7 @@ class ConferenceService
     /**
      * Get a Twilio client using the primary account.
      */
-    private function getDefaultClient(): Client
+    public function getDefaultClient(): Client
     {
         $account = \App\Models\Prospector\TwilioAccount::where('is_primary', true)
             ->where('is_active', true)
