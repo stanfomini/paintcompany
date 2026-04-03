@@ -118,14 +118,14 @@ it('does not re-queue callbacks that are not yet due', function () {
 // Auto-VM Drop on AMD Detection
 // ──────────────────────────────────────
 
-it('auto-drops voicemail when AMD detects machine and campaign has auto_vm_drop enabled', function () {
+it('auto-drops voicemail when AMD detects machine and company has default RVM template', function () {
     Event::fake([DialerCallEnded::class]);
 
-    $template = RvmTemplate::factory()->forCompany($this->company)->create();
-    $this->campaign->update([
-        'auto_vm_drop' => true,
-        'default_rvm_template_id' => $template->id,
+    $template = RvmTemplate::factory()->forCompany($this->company)->create([
+        'audio_path' => 'rvm-templates/test-vm.mp3',
     ]);
+    $this->company->update(['default_rvm_template_id' => $template->id]);
+    $this->campaign->update(['auto_vm_drop' => true]);
 
     $call = Call::factory()->create([
         'company_id' => $this->company->id,
@@ -136,16 +136,12 @@ it('auto-drops voicemail when AMD detects machine and campaign has auto_vm_drop 
         'status' => 'ringing',
     ]);
 
-    // Mock RvmService so we don't actually call Twilio
-    $rvmMock = Mockery::mock(RvmService::class);
-    $rvmMock->shouldReceive('drop')
+    // Mock ConferenceService so we don't actually call Twilio
+    $confMock = Mockery::mock(\App\Services\Prospector\ConferenceService::class);
+    $confMock->shouldReceive('playAudioOnCall')
         ->once()
-        ->with(
-            Mockery::on(fn ($c) => $c->id === $this->company->id),
-            Mockery::on(fn ($c) => $c->id === $this->contact->id),
-            Mockery::on(fn ($t) => $t->id === $template->id),
-        );
-    app()->instance(RvmService::class, $rvmMock);
+        ->with('CA_amd_machine_test', Mockery::type('string'));
+    app()->instance(\App\Services\Prospector\ConferenceService::class, $confMock);
 
     $response = $this->post(route('prospector.webhook.twilio.amd'), [
         'CallSid' => 'CA_amd_machine_test',
