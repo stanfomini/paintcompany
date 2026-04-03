@@ -21,7 +21,7 @@ class LiveEventSceneTemplateFactory extends Factory
         return [
             'user_id' => User::factory(),
             'name' => fake()->words(2, true),
-            'scenes' => LiveEventSceneTemplate::defaultScenes(),
+            'scene_data' => LiveEventSceneTemplate::defaultLayouts()[0],
         ];
     }
 }
