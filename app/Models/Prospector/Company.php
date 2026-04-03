@@ -33,6 +33,7 @@ class Company extends Model
         'color',
         'notes',
         'default_campaign_id',
+        'default_rvm_template_id',
     ];
 
     protected function casts(): array
@@ -74,6 +75,11 @@ class Company extends Model
     public function mainPhoneNumber(): BelongsTo
     {
         return $this->belongsTo(PhoneNumber::class, 'main_phone_number_id');
+    }
+
+    public function defaultRvmTemplate(): BelongsTo
+    {
+        return $this->belongsTo(RvmTemplate::class, 'default_rvm_template_id');
     }
 
     public function bookingLinks(): HasMany

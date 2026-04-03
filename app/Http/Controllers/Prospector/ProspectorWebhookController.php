@@ -190,18 +190,22 @@ class ProspectorWebhookController extends Controller
      */
     private function attemptAutoVmDrop(Call $call): void
     {
-        $call->loadMissing(['campaign.defaultRvmTemplate', 'contact', 'fromPhoneNumber']);
+        $call->loadMissing(['campaign.defaultRvmTemplate', 'contact.company.defaultRvmTemplate', 'fromPhoneNumber']);
 
         $campaign = $call->campaign;
 
-        if (! $campaign || ! $campaign->auto_vm_drop || ! $campaign->default_rvm_template_id) {
+        if (! $campaign || ! $campaign->auto_vm_drop || ! $call->contact) {
             return;
         }
 
-        $template = $campaign->defaultRvmTemplate;
-        $company = $campaign->company;
+        // For shared campaigns (company_id is null), use the CONTACT's company template.
+        // For single-company campaigns, prefer the campaign's template, fall back to company's.
+        $contactCompany = $call->contact->company;
+        $template = $campaign->defaultRvmTemplate
+            ?? $contactCompany?->defaultRvmTemplate;
+        $company = $campaign->company ?? $contactCompany;
 
-        if (! $template || ! $company || ! $call->contact) {
+        if (! $template || ! $company) {
             return;
         }
 
