@@ -34,7 +34,6 @@ class LiveEvent extends Model
         'reminder_sent_at',
         'scenes',
         'active_scene_index',
-        'overlays',
         'use_frame_mode',
         'backstage_chat_thread_id',
     ];
@@ -48,7 +47,6 @@ class LiveEvent extends Model
             'enable_recording' => 'boolean',
             'reminder_sent_at' => 'datetime',
             'scenes' => 'array',
-            'overlays' => 'array',
             'use_frame_mode' => 'boolean',
         ];
     }
