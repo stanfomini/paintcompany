@@ -262,6 +262,13 @@ class ProspectorWebhookController extends Controller
                     'ended_at' => now(),
                 ]);
 
+                // Clear the inbound_call priority flag from queue
+                if ($call->contact_id) {
+                    \App\Models\Prospector\CampaignContact::where('contact_id', $call->contact_id)
+                        ->where('priority_reason', 'inbound_call')
+                        ->update(['is_priority' => false, 'priority_reason' => null]);
+                }
+
                 // Broadcast to clear the agent's inbound banner
                 if ($call->agent_id) {
                     broadcast(new \App\Events\Prospector\DialerCallEnded(

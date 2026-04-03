@@ -1321,6 +1321,7 @@ class extends Component
                 $this->loadConversation($contactId);
             }
 
+            $this->clearInboundPriorityFlag($call->contact_id);
             $this->resetPendingInbound();
             $this->clearCaches();
 
@@ -1350,6 +1351,7 @@ class extends Component
             $this->loadConversation($contactId);
         }
 
+        $this->clearInboundPriorityFlag($call->contact_id);
         $this->resetPendingInbound();
         $this->clearCaches();
 
@@ -1379,6 +1381,8 @@ class extends Component
                 'status' => 'declined',
                 'ended_at' => now(),
             ]);
+
+            $this->clearInboundPriorityFlag($call->contact_id);
         }
 
         $this->resetPendingInbound();
@@ -1402,6 +1406,23 @@ class extends Component
         $this->pendingInboundContact = null;
         $this->pendingInboundConference = null;
         $this->pendingInboundCallSid = null;
+    }
+
+    /**
+     * Clear the inbound_call priority flag from CampaignContact entries
+     * so the queue card stops showing the green "incoming call" indicator.
+     */
+    protected function clearInboundPriorityFlag(?int $contactId): void
+    {
+        if (! $contactId) {
+            return;
+        }
+
+        \App\Models\Prospector\CampaignContact::where('contact_id', $contactId)
+            ->where('priority_reason', 'inbound_call')
+            ->update(['is_priority' => false, 'priority_reason' => null]);
+
+        $this->dispatch('queue-reload');
     }
 
     public function updatedFilterCompanyId($value): void
