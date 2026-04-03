@@ -447,7 +447,7 @@ class extends Component
                     @endforeach
                 </flux:select>
 
-                @if ($this->availableRvmTemplates->isEmpty() && $companyId)
+                @if ($this->availableRvmTemplates->isEmpty())
                     <flux:text class="text-xs text-amber-600 dark:text-amber-400">
                         {{ __('No active RVM templates found for this company. Create one in RVM Templates first.') }}
                     </flux:text>
