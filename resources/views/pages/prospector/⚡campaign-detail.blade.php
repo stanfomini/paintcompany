@@ -123,7 +123,7 @@ class extends Component
         $existingContactIds = CampaignContact::where('campaign_id', $this->campaignId)->pluck('contact_id');
         $maxSort = CampaignContact::where('campaign_id', $this->campaignId)->max('sort_order') ?? 0;
 
-        $contacts = Contact::where('company_id', $campaign->company_id)
+        $contacts = Contact::query()
             ->where('do_not_call', false)
             ->whereNotIn('id', $existingContactIds)
             ->get();
@@ -146,8 +146,7 @@ class extends Component
     #[Computed]
     public function otherCampaigns(): \Illuminate\Support\Collection
     {
-        return Campaign::where('company_id', $this->campaign->company_id)
-            ->where('id', '!=', $this->campaignId)
+        return Campaign::where('id', '!=', $this->campaignId)
             ->orderBy('name')
             ->get();
     }
@@ -195,12 +194,10 @@ class extends Component
     #[Computed]
     public function availableContacts(): \Illuminate\Support\Collection
     {
-        $companyId = $this->campaign->company_id;
         $existingContactIds = CampaignContact::where('campaign_id', $this->campaignId)
             ->pluck('contact_id');
 
         $query = Contact::query()
-            ->where('company_id', $companyId)
             ->where('do_not_call', false)
             ->whereNotIn('id', $existingContactIds)
             ->orderBy('last_name')
