@@ -557,6 +557,7 @@ export default class FrameCompositor {
             }
 
             const img = new Image();
+            img.crossOrigin = 'anonymous';
             img.src = overlay.src;
             this._imageCache.set(overlay.src, img);
         }
