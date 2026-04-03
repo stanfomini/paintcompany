@@ -162,54 +162,39 @@ describe('scene management', function () {
 });
 
 describe('overlay management', function () {
-    it('adds a text overlay', function () {
-        Livewire::actingAs($this->internal)
-            ->test('pages::events.manage', ['liveEvent' => $this->event])
-            ->set('overlayText', 'Painting Tips Live')
-            ->call('addTextOverlay');
-
-        $overlays = $this->event->fresh()->overlays;
-
-        expect($overlays)->toHaveCount(1)
-            ->and($overlays[0]['type'])->toBe('text')
-            ->and($overlays[0]['content'])->toBe('Painting Tips Live');
-    });
-
-    it('validates overlay text is required', function () {
-        Livewire::actingAs($this->internal)
-            ->test('pages::events.manage', ['liveEvent' => $this->event])
-            ->set('overlayText', '')
-            ->call('addTextOverlay')
-            ->assertHasErrors(['overlayText']);
-    });
-
-    it('removes an overlay by index', function () {
-        $this->event->update(['overlays' => [
-            ['type' => 'text', 'content' => 'First'],
-            ['type' => 'text', 'content' => 'Second'],
-        ]]);
-
-        Livewire::actingAs($this->internal)
-            ->test('pages::events.manage', ['liveEvent' => $this->event])
-            ->call('removeOverlay', 0);
-
-        $overlays = $this->event->fresh()->overlays;
-
-        expect($overlays)->toHaveCount(1)
-            ->and($overlays[0]['content'])->toBe('Second');
-    });
-
-    it('updates overlays directly', function () {
-        $overlays = [
-            ['type' => 'text', 'content' => 'Test', 'x' => 0.1, 'y' => 0.9],
-            ['type' => 'image', 'src' => '/logo.png', 'x' => 0.85, 'y' => 0.02],
+    it('stores overlays within scene data', function () {
+        $scenes = LiveEventSceneTemplate::defaultLayouts();
+        $scenes[0]['overlays'] = [
+            ['type' => 'text', 'content' => 'Hello World', 'visible' => true, 'x' => 0.1, 'y' => 0.85],
         ];
 
         Livewire::actingAs($this->internal)
             ->test('pages::events.manage', ['liveEvent' => $this->event])
-            ->call('updateOverlays', $overlays);
+            ->call('updateScenes', $scenes);
 
-        expect($this->event->fresh()->overlays)->toHaveCount(2);
+        $updatedScenes = $this->event->fresh()->scenes;
+        expect($updatedScenes[0]['overlays'])->toHaveCount(1)
+            ->and($updatedScenes[0]['overlays'][0]['content'])->toBe('Hello World');
+    });
+
+    it('removes overlays via updateScenes', function () {
+        $scenes = LiveEventSceneTemplate::defaultLayouts();
+        $scenes[0]['overlays'] = [
+            ['type' => 'text', 'content' => 'Keep me', 'visible' => true],
+            ['type' => 'text', 'content' => 'Remove me', 'visible' => true],
+        ];
+        $this->event->update(['scenes' => $scenes]);
+
+        $scenes[0]['overlays'] = [
+            ['type' => 'text', 'content' => 'Keep me', 'visible' => true],
+        ];
+
+        Livewire::actingAs($this->internal)
+            ->test('pages::events.manage', ['liveEvent' => $this->event])
+            ->call('updateScenes', $scenes);
+
+        expect($this->event->fresh()->scenes[0]['overlays'])->toHaveCount(1)
+            ->and($this->event->fresh()->scenes[0]['overlays'][0]['content'])->toBe('Keep me');
     });
 });
 
@@ -218,20 +203,22 @@ describe('overlay management', function () {
 // ============================================================
 
 describe('scene templates', function () {
-    it('saves current config as template', function () {
-        $scenes = LiveEventSceneTemplate::defaultScenes();
-        $this->event->update(['scenes' => $scenes]);
+    it('saves a scene as template', function () {
+        $scene = LiveEventSceneTemplate::defaultLayouts()[0];
+        $scene['overlays'] = [
+            ['type' => 'text', 'content' => 'My overlay', 'visible' => true],
+        ];
 
         Livewire::actingAs($this->internal)
             ->test('pages::events.manage', ['liveEvent' => $this->event])
-            ->set('templateName', 'My Interview Layout')
-            ->call('saveAsTemplate');
+            ->set('templateName', 'My Solo Scene')
+            ->call('saveAsTemplate', $scene)
+            ->assertDispatched('template-saved');
 
         $template = LiveEventSceneTemplate::where('user_id', $this->internal->id)->first();
-
-        expect($template)->not->toBeNull()
-            ->and($template->name)->toBe('My Interview Layout')
-            ->and($template->scenes)->toHaveCount(5);
+        expect($template->name)->toBe('My Solo Scene')
+            ->and($template->scene_data)->toBeArray()
+            ->and($template->scene_data['overlays'])->toHaveCount(1);
     });
 
     it('validates template name is required', function () {
@@ -242,20 +229,28 @@ describe('scene templates', function () {
             ->assertHasErrors(['templateName']);
     });
 
-    it('loads a saved template into event', function () {
-        $template = LiveEventSceneTemplate::factory()->create([
+    it('loads a saved template into event scenes', function () {
+        $scene = LiveEventSceneTemplate::defaultLayouts()[1];
+        $scene['overlays'] = [
+            ['type' => 'text', 'content' => 'Interview Title', 'visible' => true],
+        ];
+
+        $template = LiveEventSceneTemplate::create([
             'user_id' => $this->internal->id,
-            'name' => 'Saved Layout',
-            'scenes' => [['name' => 'Custom Scene', 'slots' => [], 'overlays' => []]],
-            'overlays' => [['type' => 'text', 'content' => 'Hello']],
+            'name' => 'My Interview',
+            'scene_data' => $scene,
         ]);
 
         Livewire::actingAs($this->internal)
             ->test('pages::events.manage', ['liveEvent' => $this->event])
-            ->call('loadTemplate', $template->id);
+            ->call('loadTemplate', $template->id)
+            ->assertDispatched('template-loaded');
 
-        expect($this->event->fresh()->scenes[0]['name'])->toBe('Custom Scene')
-            ->and($this->event->fresh()->overlays[0]['content'])->toBe('Hello');
+        $eventScenes = $this->event->fresh()->scenes;
+        $lastScene = end($eventScenes);
+        expect($lastScene['name'])->toBe('Interview')
+            ->and($lastScene['overlays'])->toHaveCount(1)
+            ->and($lastScene['overlays'][0]['content'])->toBe('Interview Title');
     });
 
     it('prevents loading another users template', function () {
