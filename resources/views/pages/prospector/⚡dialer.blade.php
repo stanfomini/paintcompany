@@ -1449,6 +1449,7 @@ class extends Component
             this.syncInterval = setInterval(() => { this.loadQueue(); }, 30000);
 
             // Re-fetch queue when server-side filters change
+            $watch('$wire.selectedCampaignId', () => { this.loadQueue(); });
             $watch('$wire.queueSearch', () => { this.loadQueue(); });
 
             if (typeof Echo !== 'undefined' && $wire.agentId) {
