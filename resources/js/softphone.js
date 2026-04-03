@@ -91,7 +91,8 @@ export default class SoftphoneManager {
             const res = await fetch(tokenUrl);
             data = await res.json();
             if (!res.ok || data.error) {
-                this._emit('error', data.error || 'Failed to get phone token');
+                const errMsg = typeof data.error === 'string' ? data.error : 'Failed to get phone token';
+                this._emit('error', errMsg);
                 return;
             }
         } catch (err) {
@@ -129,7 +130,9 @@ export default class SoftphoneManager {
         });
 
         this._device.on('error', (err) => {
-            this._emit('error', err.message || 'Phone error');
+            const code = err.code ? `(${err.code}) ` : '';
+            const message = typeof err.message === 'string' ? err.message : (typeof err === 'string' ? err : 'Phone error');
+            this._emit('error', code + message);
         });
 
         this._device.on('tokenWillExpire', async () => {

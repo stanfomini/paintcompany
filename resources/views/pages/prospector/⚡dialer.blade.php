@@ -169,7 +169,10 @@ class extends Component
 
         $companyIds = $this->agent->getCompanyIds();
 
-        return Campaign::whereIn('company_id', $companyIds)
+        return Campaign::where(function ($q) use ($companyIds) {
+                $q->whereIn('company_id', $companyIds)
+                    ->orWhereNull('company_id');
+            })
             ->where('status', 'active')
             ->orderBy('name')
             ->get();
@@ -780,7 +783,7 @@ class extends Component
         $this->clearCaches();
 
         return [
-            'contactId' => $contact->id,
+            'contactId' => $call->contact_id,
             'callId' => $call->id,
         ];
     }
@@ -1330,7 +1333,9 @@ class extends Component
             });
 
             phone.on('error', (msg) => {
-                this.sessionError = msg;
+                const errorStr = typeof msg === 'string' ? msg : (msg?.message || String(msg));
+                this.phoneError = errorStr;
+                this.sessionError = errorStr;
             });
 
             phone.on('state-change', (state) => {
