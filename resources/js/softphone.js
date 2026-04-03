@@ -118,7 +118,10 @@ export default class SoftphoneManager {
         const Device = await window.loadTwilioVoice();
         this._device = new Device(data.token, {
             codecPreferences: ['opus', 'pcmu'],
-            edge: 'ashburn',
+            // Let Twilio auto-select the closest edge (was hardcoded to ashburn)
+            edge: 'roaming',
+            // Enable aggressive ICE candidate gathering for NAT traversal
+            forceAggressiveIceNomination: true,
             sounds: {
                 incoming: '/sounds/phone-ring.wav',
             },

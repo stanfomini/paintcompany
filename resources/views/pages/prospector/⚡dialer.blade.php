@@ -1127,6 +1127,7 @@ class extends Component
     {
         $this->callStatus = 'ended';
         $this->showDisposition = true;
+        $this->agentStatus = 'available';
         $this->supervisorName = null;
         $this->supervisorMode = null;
         $this->clearCaches();
