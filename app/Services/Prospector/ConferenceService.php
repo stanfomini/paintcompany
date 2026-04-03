@@ -466,6 +466,40 @@ class ConferenceService
     }
 
     /**
+     * Play a pre-recorded audio file on an in-progress call, then hang up.
+     *
+     * Used for voicemail drops — plays the template audio on the contact's
+     * call leg and terminates the call after playback.
+     */
+    public function playAudioOnCall(string $callSid, string $audioUrl): void
+    {
+        $client = $this->getDefaultClient();
+
+        $twiml = '<Response><Play>'.htmlspecialchars($audioUrl).'</Play><Hangup/></Response>';
+
+        $client->calls($callSid)->update(['twiml' => $twiml]);
+
+        Log::info('Playing audio on call (VM drop)', [
+            'call_sid' => $callSid,
+            'audio_url' => $audioUrl,
+        ]);
+    }
+
+    /**
+     * Get a publicly accessible URL for an RVM template's audio file.
+     *
+     * Returns a full HTTPS URL that Twilio can fetch for <Play> TwiML.
+     */
+    public static function getPublicAudioUrl(\App\Models\Prospector\RvmTemplate $template): string
+    {
+        if (str_starts_with($template->audio_path, 'http')) {
+            return $template->audio_path;
+        }
+
+        return asset('storage/'.$template->audio_path);
+    }
+
+    /**
      * End an entire conference by updating its status to completed.
      */
     public function endConference(string $conferenceSid): void
