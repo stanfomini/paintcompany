@@ -236,6 +236,7 @@ class DialerOrchestrationService
             ]);
 
             $call->markFailed();
+            $entry->update(['status' => 'queued']);
             $this->queueService->release($entry);
 
             return null;
