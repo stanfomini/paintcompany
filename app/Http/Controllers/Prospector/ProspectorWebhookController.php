@@ -83,6 +83,22 @@ class ProspectorWebhookController extends Controller
         $call->update($updateData);
 
         if (in_array($mappedStatus, ['completed', 'busy', 'no_answer', 'failed', 'canceled'])) {
+            // Release CampaignContact claim for calls that don't need manual disposition
+            // (busy, no_answer, failed, canceled = contact was never reached)
+            if (in_array($mappedStatus, ['busy', 'no_answer', 'failed', 'canceled']) && $call->campaign_id && $call->contact_id) {
+                $entry = \App\Models\Prospector\CampaignContact::where('campaign_id', $call->campaign_id)
+                    ->where('contact_id', $call->contact_id)
+                    ->where('status', 'dialing')
+                    ->first();
+
+                if ($entry) {
+                    $entry->update([
+                        'status' => 'queued',
+                        'claimed_by_agent_id' => null,
+                    ]);
+                }
+            }
+
             broadcast(new DialerCallEnded($call, $call->agent_id));
 
             // Dispatch AI call intelligence processing for completed calls
@@ -135,6 +151,21 @@ class ProspectorWebhookController extends Controller
                 'status' => 'voicemail',
                 'ended_at' => now(),
             ]);
+
+            // Release CampaignContact claim — voicemail means contact wasn't reached
+            if ($call->campaign_id && $call->contact_id) {
+                $entry = \App\Models\Prospector\CampaignContact::where('campaign_id', $call->campaign_id)
+                    ->where('contact_id', $call->contact_id)
+                    ->where('status', 'dialing')
+                    ->first();
+
+                if ($entry) {
+                    $entry->update([
+                        'status' => 'queued',
+                        'claimed_by_agent_id' => null,
+                    ]);
+                }
+            }
 
             // Auto-VM drop if campaign has it enabled
             $this->attemptAutoVmDrop($call);
