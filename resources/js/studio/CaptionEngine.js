@@ -93,6 +93,15 @@ export default class CaptionEngine {
         }
     }
 
+    addSource(key, track, name) {
+        if (!this._audioContext || !this._running) return;
+        this._addAnalyser(key, track, name);
+    }
+
+    removeSource(key) {
+        this._analysers.delete(key);
+    }
+
     stop() {
         this._running = false;
 

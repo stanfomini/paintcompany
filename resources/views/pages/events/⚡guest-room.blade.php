@@ -642,6 +642,9 @@ new #[Layout('layouts.video-call')] class extends Component
                         guestRoom = new Room({
                             adaptiveStream: true,
                             dynacast: true,
+                            videoCaptureDefaults: {
+                                resolution: { width: 1280, height: 720, frameRate: 30 },
+                            },
                         });
 
                         // Subscribe to host/coproducer tracks (stream preview)
@@ -727,6 +730,9 @@ new #[Layout('layouts.video-call')] class extends Component
                         await localParticipant.publishTrack(videoTrack, {
                             name: 'camera',
                             source: 'camera',
+                            videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 30 },
+                            videoCodec: 'vp8',
+                            simulcast: true,
                         });
                     }
 
@@ -736,6 +742,7 @@ new #[Layout('layouts.video-call')] class extends Component
                         await localParticipant.publishTrack(audioTrack, {
                             name: 'microphone',
                             source: 'microphone',
+                            audioBitrate: 48_000,
                         });
                     }
                 },

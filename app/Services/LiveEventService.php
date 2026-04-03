@@ -45,7 +45,16 @@ class LiveEventService
      */
     public function goLive(LiveEvent $event): void
     {
-        $this->liveKitService->createRoom($event);
+        try {
+            $this->liveKitService->createRoom($event);
+        } catch (\Throwable $e) {
+            Log::error('LiveEvent: Failed to create LiveKit room', [
+                'event_id' => $event->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
 
         $event->update([
             'status' => 'live',
