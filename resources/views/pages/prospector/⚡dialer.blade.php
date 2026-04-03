@@ -1312,6 +1312,13 @@ class extends Component
         },
 
         async initDialerSession() {
+            // Don't re-create if already initialized (survives Livewire re-renders)
+            if (window.__softphone && window.__softphone.isReady) {
+                this.phoneReady = true;
+                this.phoneCompanyId = window.__softphone.companyId;
+                return;
+            }
+
             const SoftphoneManager = await window.loadSoftphone();
             window.__softphone = new SoftphoneManager();
             const phone = window.__softphone;
@@ -1550,14 +1557,10 @@ class extends Component
                     Echo.leave('prospector.company.' + cid);
                 });
             }
-            if (this.dialerSession) {
-                this.dialerSession.destroy();
-                this.dialerSession = null;
-            }
-            if (window.__softphone) {
-                window.__softphone.destroy();
-                window.__softphone = null;
-            }
+            // NOTE: Do NOT destroy softphone or dialer session here.
+            // Alpine destroy() fires on Livewire re-renders (morphs), not just page unload.
+            // The softphone and session must persist across re-renders.
+            // They are cleaned up explicitly via stopSession() or page unload.
             if (typeof Echo !== 'undefined' && $wire.agentId) {
                 Echo.leave('prospector.agent.' + $wire.agentId);
             }
