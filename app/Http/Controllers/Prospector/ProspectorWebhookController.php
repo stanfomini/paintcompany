@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\RvmDrop;
 use App\Services\Prospector\AmdService;
+use App\Services\Prospector\ConferenceService;
 use App\Services\Prospector\ProspectorSmsService;
 use App\Services\Prospector\RvmService;
 use Illuminate\Http\Request;
@@ -185,44 +186,40 @@ class ProspectorWebhookController extends Controller
     /**
      * Attempt automatic voicemail drop when AMD detects a machine.
      *
-     * If the call's campaign has auto_vm_drop enabled with a default
-     * RVM template, drop the voicemail and auto-disposition the call.
+     * Instead of making a new outbound call (RvmService::drop), play the
+     * pre-recorded audio directly on the contact's EXISTING call leg,
+     * then let the call end naturally after playback.
      */
     private function attemptAutoVmDrop(Call $call): void
     {
-        $call->loadMissing(['campaign.defaultRvmTemplate', 'contact.company.defaultRvmTemplate', 'fromPhoneNumber']);
+        $call->loadMissing(['contact.company.defaultRvmTemplate']);
 
-        $campaign = $call->campaign;
+        $contact = $call->contact;
 
-        if (! $campaign || ! $campaign->auto_vm_drop || ! $call->contact) {
+        if (! $contact || ! $contact->company) {
             return;
         }
 
-        // For shared campaigns (company_id is null), use the CONTACT's company template.
-        // For single-company campaigns, prefer the campaign's template, fall back to company's.
-        $contactCompany = $call->contact->company;
-        $template = $campaign->defaultRvmTemplate
-            ?? $contactCompany?->defaultRvmTemplate;
-        $company = $campaign->company ?? $contactCompany;
+        $template = $contact->company->defaultRvmTemplate;
 
-        if (! $template || ! $company) {
+        if (! $template || ! $template->audio_path) {
             return;
         }
 
         try {
-            $rvmService = app(\App\Services\Prospector\RvmService::class);
-            $rvmService->drop($company, $call->contact, $template);
+            $audioUrl = ConferenceService::getPublicAudioUrl($template);
+            $conferenceService = app(ConferenceService::class);
+            $conferenceService->playAudioOnCall($call->twilio_call_sid, $audioUrl);
 
-            // Auto-disposition as voicemail
             $call->update([
                 'disposition' => 'voicemail',
                 'disposition_notes' => 'Auto VM drop',
             ]);
 
-            Log::info('Auto-VM dropped', [
+            Log::info('Auto-VM dropped on active call', [
                 'call_id' => $call->id,
-                'campaign_id' => $campaign->id,
                 'template_id' => $template->id,
+                'audio_url' => $audioUrl,
             ]);
         } catch (\Exception $e) {
             Log::warning('Auto-VM drop failed', [
