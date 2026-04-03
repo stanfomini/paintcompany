@@ -194,6 +194,7 @@ class CampaignQueueService
                 'total_attempts' => $entry->total_attempts,
                 'max_total' => $campaign->max_total_attempts,
                 'is_priority' => $entry->is_priority,
+                'priority_reason' => $entry->priority_reason,
                 'follow_up_at' => $contact->follow_up_at?->toISOString(),
             ];
         })->values()->all();

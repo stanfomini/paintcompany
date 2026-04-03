@@ -1347,6 +1347,13 @@ class extends Component
         showCallbackPicker: false,
         showScript: true,
 
+        // Inbound call waiting indicator
+        inboundWaiting: false,
+        inboundWaitSeconds: 0,
+        inboundWaitInterval: null,
+        inboundCallerName: '',
+        inboundCallerPhone: '',
+
         // Queue state
         queueItems: [],
         syncInterval: null,
@@ -1688,6 +1695,14 @@ class extends Component
                             window.__dialerSession.pause();
                         }
 
+                        // Show inbound waiting indicator with counter
+                        this.inboundWaiting = true;
+                        this.inboundWaitSeconds = 0;
+                        this.inboundCallerName = e.contact?.name || 'Unknown';
+                        this.inboundCallerPhone = e.from_number || '';
+                        if (this.inboundWaitInterval) clearInterval(this.inboundWaitInterval);
+                        this.inboundWaitInterval = setInterval(() => { this.inboundWaitSeconds++; }, 1000);
+
                         // Delay queue reload slightly so server-side priority flag commits
                         setTimeout(() => { this.loadQueue(); }, 300);
                         $wire.onInboundCallRinging(e);
@@ -1698,6 +1713,10 @@ class extends Component
                         }
                     })
                     .listen('.dialer.call.connected', (e) => {
+                        // Clear inbound waiting indicator (call is now connected)
+                        this.inboundWaiting = false;
+                        if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
+
                         $wire.onCallConnected(e);
                         this.startTimer();
                         if (window.__dialerSession) {
@@ -1706,6 +1725,9 @@ class extends Component
                     })
                     .listen('.dialer.call.ended', (e) => {
                         this.stopTimer();
+                        // Clear inbound waiting indicator
+                        this.inboundWaiting = false;
+                        if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
                         // Do NOT call hangUp() here — in persistent conference mode,
                         // the agent stays in the conference between calls. The contact
                         // already left. Calling hangUp() would disconnect the agent's
@@ -1768,6 +1790,10 @@ class extends Component
 
         destroy() {
             this.stopTimer();
+            if (this.inboundWaitInterval) {
+                clearInterval(this.inboundWaitInterval);
+                this.inboundWaitInterval = null;
+            }
             if (this.syncInterval) {
                 clearInterval(this.syncInterval);
                 this.syncInterval = null;
@@ -1833,6 +1859,31 @@ class extends Component
                     <button type="button" x-on:click="sessionError = null" class="ml-auto text-red-500 hover:text-red-700">
                         <flux:icon name="x-mark" variant="micro" />
                     </button>
+                </div>
+            </template>
+
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+    {{-- INBOUND CALL WAITING BANNER (above queue)                        --}}
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+            <template x-if="inboundWaiting">
+                <div class="flex items-center gap-3 border-b border-green-300 bg-green-50 px-4 py-3 dark:border-green-700 dark:bg-green-900/20">
+                    <div class="flex size-10 items-center justify-center rounded-full bg-green-500 text-white">
+                        <flux:icon name="phone-arrow-down-left" variant="mini" class="animate-bounce" />
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm font-bold text-green-800 dark:text-green-200">
+                            Incoming Call
+                        </div>
+                        <div class="text-sm text-green-700 dark:text-green-300">
+                            <span x-text="inboundCallerName"></span>
+                            <span class="ml-1 font-mono text-xs" x-text="inboundCallerPhone"></span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="rounded-full bg-green-600 px-3 py-1 text-sm font-mono font-bold text-white">
+                            <span x-text="formatTime(inboundWaitSeconds)">0:00</span>
+                        </div>
+                    </div>
                 </div>
             </template>
 
