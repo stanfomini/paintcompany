@@ -6,6 +6,7 @@ use App\Models\Prospector\RvmDrop;
 use App\Models\Prospector\RvmTemplate;
 use App\Services\Prospector\RvmService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -168,10 +169,15 @@ class extends Component
 
         if ($this->audioFile) {
             $path = $this->audioFile->store('rvm-templates', 'public');
-            $data['audio_path'] = $path;
-
-            // Get duration via getID3 or estimate
             $data['duration_seconds'] = $this->recordedDuration ?? $this->estimateAudioDuration($this->audioFile);
+
+            // Convert non-MP3 files (WebM, WAV) to MP3 for Twilio compatibility
+            $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            if ($extension !== 'mp3') {
+                $path = $this->convertToMp3($path);
+            }
+
+            $data['audio_path'] = $path;
         }
 
         if ($this->editingTemplateId) {
@@ -360,6 +366,47 @@ class extends Component
         $size = $file->getSize();
         // Rough estimate: MP3 at 128kbps = ~16KB/sec
         return max(1, (int) round($size / 16000));
+    }
+
+    /**
+     * Convert an uploaded audio file to MP3 using ffmpeg.
+     *
+     * Returns the new storage path (relative to public disk).
+     */
+    protected function convertToMp3(string $inputPath): string
+    {
+        $fullInputPath = Storage::disk('public')->path($inputPath);
+        $outputFilename = pathinfo($inputPath, PATHINFO_FILENAME) . '.mp3';
+        $outputPath = 'rvm-templates/' . $outputFilename;
+        $fullOutputPath = Storage::disk('public')->path($outputPath);
+
+        // Ensure output directory exists
+        $dir = dirname($fullOutputPath);
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $command = sprintf(
+            'ffmpeg -y -i %s -codec:a libmp3lame -qscale:a 2 %s 2>&1',
+            escapeshellarg($fullInputPath),
+            escapeshellarg($fullOutputPath),
+        );
+
+        exec($command, $output, $returnCode);
+
+        if ($returnCode !== 0) {
+            Log::error('ffmpeg conversion failed', [
+                'command' => $command,
+                'output' => implode("\n", $output),
+                'return_code' => $returnCode,
+            ]);
+            throw new \RuntimeException('Audio conversion failed. Please try uploading an MP3 file instead.');
+        }
+
+        // Delete the original WebM file
+        Storage::disk('public')->delete($inputPath);
+
+        return $outputPath;
     }
 
     protected function getStatusBadge(string $status): array
