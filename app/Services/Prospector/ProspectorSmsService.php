@@ -185,7 +185,7 @@ class ProspectorSmsService
         $contact->update(['has_unread_sms' => true]);
 
         // Flag in queue as priority
-        CampaignContact::where('contact_id', $contact->id)
+        $prioritized = CampaignContact::where('contact_id', $contact->id)
             ->where('status', 'queued')
             ->where('is_priority', false)
             ->update(['is_priority' => true, 'priority_reason' => 'unread_sms']);
@@ -199,6 +199,14 @@ class ProspectorSmsService
         ]);
 
         broadcast(new SmsReceived($smsMessage, $company->id));
+
+        if ($prioritized || $queueEntry) {
+            broadcast(new \App\Events\Prospector\QueueUpdated(
+                companyId: $company->id,
+                action: 'priority_bump',
+                contactId: $contact->id,
+            ));
+        }
 
         return $smsMessage;
     }

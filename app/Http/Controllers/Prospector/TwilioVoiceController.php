@@ -199,6 +199,11 @@ class TwilioVoiceController extends Controller
             foreach ($queueEntries as $entry) {
                 $entry->markPriority('inbound_call');
             }
+            broadcast(new \App\Events\Prospector\QueueUpdated(
+                companyId: $company->id,
+                action: 'priority_bump',
+                contactId: $contact->id,
+            ));
         } elseif ($company->default_campaign_id) {
             // Auto-enroll in default campaign at front with priority
             $defaultCampaign = Campaign::find($company->default_campaign_id);
@@ -207,6 +212,11 @@ class TwilioVoiceController extends Controller
                 CampaignContact::where('contact_id', $contact->id)
                     ->where('campaign_id', $company->default_campaign_id)
                     ->update(['is_priority' => true, 'priority_reason' => 'inbound_call']);
+                broadcast(new \App\Events\Prospector\QueueUpdated(
+                    companyId: $company->id,
+                    action: 'priority_bump',
+                    contactId: $contact->id,
+                ));
             }
         }
 

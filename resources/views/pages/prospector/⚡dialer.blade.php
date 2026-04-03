@@ -1458,8 +1458,8 @@ class extends Component
             // Load initial queue
             this.loadQueue();
 
-            // Background sync every 10 seconds (catches cooldown expiry)
-            this.syncInterval = setInterval(() => { this.loadQueue(); }, 10000);
+            // Backup sync every 30 seconds (primary updates via Reverb WebSocket)
+            this.syncInterval = setInterval(() => { this.loadQueue(); }, 30000);
 
             // Re-fetch queue when server-side filters change
             $watch('$wire.selectedCampaignId', () => { this.loadQueue(); });

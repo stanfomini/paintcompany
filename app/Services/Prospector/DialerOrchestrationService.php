@@ -246,6 +246,17 @@ class DialerOrchestrationService
         $session->incrementAttempted();
         $this->agentStateService->setStatus($agent, 'ringing');
 
+        // Schedule queue refresh when this contact's cooldown expires
+        // so it reappears in agents' live queues at the exact right moment
+        $cooldownMinutes = $campaign->min_minutes_between;
+        if ($cooldownMinutes > 0) {
+            $companyId = $company->id;
+            $contactId = $contact->id;
+            dispatch(function () use ($companyId, $contactId) {
+                broadcast(new QueueUpdated($companyId, 'cooldown_expired', $contactId));
+            })->delay(now()->addMinutes($cooldownMinutes));
+        }
+
         Log::info('DialerOrchestration: call placed', [
             'call_id' => $call->id,
             'session_id' => $session->id,
