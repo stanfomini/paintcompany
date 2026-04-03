@@ -418,6 +418,54 @@ class ConferenceService
     }
 
     /**
+     * Redirect an in-progress call into a conference.
+     *
+     * Used to move an inbound caller from a hold conference into the agent's
+     * session conference. The call must be in-progress (already answered).
+     */
+    public function redirectCallToConference(string $callSid, string $conferenceName): void
+    {
+        $client = $this->getDefaultClient();
+
+        $twiml = '<Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false" beep="false" statusCallback="'
+            .route('prospector.webhook.twilio.conference.status')
+            .'" statusCallbackEvent="join leave end">'
+            .htmlspecialchars($conferenceName)
+            .'</Conference></Dial></Response>';
+
+        $client->calls($callSid)->update(['twiml' => $twiml]);
+
+        Log::info('Redirected call to conference', [
+            'call_sid' => $callSid,
+            'conference' => $conferenceName,
+        ]);
+    }
+
+    /**
+     * Redirect an in-progress call to voicemail TwiML.
+     *
+     * Used to decline an inbound call — the caller hears a message
+     * and can leave a recording.
+     */
+    public function redirectCallToVoicemail(string $callSid, ?Company $company = null): void
+    {
+        $client = $this->getDefaultClient();
+
+        $name = $company?->name ?? 'us';
+        $twiml = '<Response><Say>Thank you for calling '.htmlspecialchars($name)
+            .'. Please leave a message after the beep.</Say>'
+            .'<Record maxLength="120" action="'.route('prospector.webhook.twilio.voice.status').'"/>'
+            .'<Say>We did not receive a recording. Goodbye.</Say><Hangup/></Response>';
+
+        $client->calls($callSid)->update(['twiml' => $twiml]);
+
+        Log::info('Redirected call to voicemail', [
+            'call_sid' => $callSid,
+            'company' => $company?->name,
+        ]);
+    }
+
+    /**
      * End an entire conference by updating its status to completed.
      */
     public function endConference(string $conferenceSid): void

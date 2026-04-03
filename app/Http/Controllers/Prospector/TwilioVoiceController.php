@@ -302,22 +302,28 @@ class TwilioVoiceController extends Controller
     }
 
     /**
-     * Route an inbound call to an available agent via conference.
+     * Route an inbound call to an available agent via hold conference.
+     *
+     * The caller is ALWAYS placed in a temporary hold conference with music.
+     * The agent's WebRTC connection is never touched — accept/decline happens
+     * via server-side Twilio REST API (redirectCallToConference / redirectCallToVoicemail).
+     * This avoids triggering getUserMedia() on iPad which mutes existing audio.
      */
     protected function routeToAgent(Company $company, Contact $contact, string $fromNumber, string $toNumber, string $callSid): Response
     {
         // Find available agents via the pivot table.
-        // Include agents in dialer sessions (on_call/ringing) — inbound calls
-        // can route into their persistent conference.
+        // Include agents in dialer sessions — they can accept inbound via hold pattern.
+        // Exclude agents who already have a holding inbound call.
         $agents = Agent::whereHas('companies', fn ($q) => $q->where('prospector_companies.id', $company->id))
             ->where(function ($q) {
                 $q->whereIn('status', ['available', 'nearby'])
                     ->orWhere(function ($q2) {
-                        // Agents in active dialer sessions can receive inbound calls
                         $q2->whereIn('status', ['on_call', 'ringing'])
                             ->whereHas('dialerSessions', fn ($ds) => $ds->where('status', 'active'));
                     });
             })
+            // Exclude agents who already have a pending inbound call on hold
+            ->whereDoesntHave('calls', fn ($q) => $q->where('direction', 'inbound')->where('status', 'holding'))
             ->get();
 
         if ($agents->isEmpty()) {
@@ -332,16 +338,8 @@ class TwilioVoiceController extends Controller
         // Prefer available agents first, then agents in active sessions
         $agent = $agents->sortBy(fn ($a) => $a->status === 'available' ? 0 : 1)->first();
 
-        // Check if the agent has an active dialer session — route into their persistent conference
-        $activeSession = \App\Models\Prospector\DialerSession::where('agent_id', $agent->id)
-            ->where('status', 'active')
-            ->first();
-
-        $conferenceName = ($activeSession && $activeSession->conference_name)
-            ? $activeSession->conference_name
-            : 'inbound-'.Str::ulid();
-
-        $hasActiveSession = $activeSession !== null;
+        // Always create a temporary hold conference — never put caller in agent's session conference directly
+        $holdConferenceName = 'inbound-hold-'.Str::ulid();
 
         $call = Call::create([
             'company_id' => $company->id,
@@ -351,10 +349,9 @@ class TwilioVoiceController extends Controller
             'from_number' => $fromNumber,
             'to_number' => $toNumber,
             'twilio_call_sid' => $callSid,
-            'twilio_conference_sid' => $conferenceName,
-            'status' => $hasActiveSession ? 'in-progress' : 'ringing',
+            'twilio_conference_sid' => $holdConferenceName,
+            'status' => 'holding',
             'started_at' => now(),
-            'answered_at' => $hasActiveSession ? now() : null,
         ]);
 
         $agentIds = $agents->pluck('id')->all();
@@ -362,43 +359,39 @@ class TwilioVoiceController extends Controller
         broadcast(new InboundCallRinging(
             call: $call,
             company: $company,
-            conferenceName: $conferenceName,
+            holdConferenceName: $holdConferenceName,
             agentIds: $agentIds,
-            isAutoConnected: $hasActiveSession,
         ));
 
-        // NOTE: Do NOT call dialAgentIntoConference() here.
-        // On iPad/mobile, sending a second Device incoming call triggers
-        // getUserMedia() which mutes the existing conference audio.
-        // For now, inbound calls without an active session go to voicemail.
-        // TODO: Build proper inbound call holding pattern (temporary conference
-        // + call redirect via Twilio REST API, no Device involvement).
-
-        Log::info('Inbound call routed', [
+        Log::info('Inbound call placed in hold conference', [
             'call_id' => $call->id,
             'company_id' => $company->id,
             'agent_id' => $agent->id,
             'contact_id' => $contact->id,
-            'conference' => $conferenceName,
-            'auto_connected' => $hasActiveSession,
+            'hold_conference' => $holdConferenceName,
         ]);
 
-        return $this->conferenceJoinTwiml($conferenceName);
+        return $this->holdConferenceTwiml($holdConferenceName);
     }
 
     /**
-     * Generate TwiML to put the caller into a conference room (with hold music).
+     * Generate TwiML to place caller in a temporary hold conference with music.
+     *
+     * endConferenceOnExit is true so the hold conference is cleaned up
+     * when the caller hangs up (the agent is never in this conference).
      */
-    protected function conferenceJoinTwiml(string $conferenceName): Response
+    protected function holdConferenceTwiml(string $holdConferenceName): Response
     {
         $response = new VoiceResponse;
         $response->say('Please hold while we connect you to an agent.');
         $dial = $response->dial();
-        $dial->conference($conferenceName, [
+        $dial->conference($holdConferenceName, [
             'startConferenceOnEnter' => true,
             'endConferenceOnExit' => true,
             'beep' => false,
             'waitUrl' => 'http://twimlets.com/holdmusic?Bucket=com.twilio.music.classical',
+            'statusCallback' => route('prospector.webhook.twilio.conference.status'),
+            'statusCallbackEvent' => 'join leave end',
         ]);
 
         return $this->twimlResponse($response);

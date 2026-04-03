@@ -44,6 +44,12 @@ class extends Component
     public ?string $amdResult = null;
     public bool $isInboundCall = false;
 
+    // Pending inbound call (separate from active call to avoid overwriting outbound state)
+    public ?int $pendingInboundCallId = null;
+    public ?array $pendingInboundContact = null;
+    public ?string $pendingInboundConference = null;
+    public ?string $pendingInboundCallSid = null;
+
     // Parallel dialer state
     public array $parallelLines = []; // [{call_id, contact_name, phone, status}]
     public ?int $connectedLineIndex = null;
@@ -1211,23 +1217,191 @@ class extends Component
 
     public function onInboundCallRinging(array $data): void
     {
-        $this->activeCallId = $data['call_id'] ?? null;
-        $this->activeContact = $data['contact'] ?? null;
-        $this->callingFrom = $data['from_number'] ?? null;
-        $this->isInboundCall = true;
+        // Store inbound call in PENDING properties — never overwrite active outbound call state.
+        // The agent sees a banner and can Accept/Decline without disrupting current call.
+        $this->pendingInboundCallId = $data['call_id'] ?? null;
+        $this->pendingInboundContact = $data['contact'] ?? null;
+        $this->pendingInboundConference = $data['hold_conference_name'] ?? null;
+        $this->pendingInboundCallSid = $data['call_sid'] ?? null;
 
-        // If agent is in a session, the caller joins the conference automatically —
-        // show connected state immediately. Otherwise, show ringing (needs answer).
-        $isAutoConnected = $data['is_auto_connected'] ?? false;
-        $this->callStatus = $isAutoConnected ? 'connected' : 'ringing';
-        $this->agentStatus = $isAutoConnected ? 'on_call' : 'ringing';
-
-        if ($contactId = $data['contact']['id'] ?? null) {
-            $this->previewContactId = $contactId;
-            $this->loadContactState($contactId);
+        // Load contact detail for the preview panel (only if not on an active call)
+        if (! $this->activeCallId) {
+            if ($contactId = $data['contact']['id'] ?? null) {
+                $this->previewContactId = $contactId;
+                $this->loadContactState($contactId);
+                $this->loadConversation($contactId);
+            }
         }
 
         $this->clearCaches();
+    }
+
+    /**
+     * Accept a pending inbound call.
+     *
+     * Scenario A (in session): Redirect caller from hold conference into agent's session conference.
+     * Scenario B (idle): Return hold conference name so Alpine can dial agent in via WebRTC.
+     */
+    public function acceptInboundCall(): array
+    {
+        if (! $this->pendingInboundCallId) {
+            return ['error' => 'No pending inbound call'];
+        }
+
+        $call = Call::find($this->pendingInboundCallId);
+
+        if (! $call) {
+            $this->resetPendingInbound();
+
+            return ['error' => 'Call not found'];
+        }
+
+        $conferenceService = app(ConferenceService::class);
+
+        // Scenario A: Agent is in an active dialer session
+        if ($this->activeSessionId) {
+            $session = DialerSession::find($this->activeSessionId);
+
+            if (! $session || ! $session->conference_name) {
+                $this->resetPendingInbound();
+
+                return ['error' => 'No active session conference'];
+            }
+
+            // If agent is on an active outbound call, hold the outbound contact
+            if ($this->activeCallId && $this->callStatus === 'connected') {
+                $activeCall = Call::find($this->activeCallId);
+
+                if ($activeCall && $activeCall->twilio_call_sid && $activeCall->twilio_conference_sid) {
+                    try {
+                        $conferenceService->holdParticipant(
+                            $activeCall->twilio_conference_sid,
+                            $activeCall->twilio_call_sid,
+                            true,
+                        );
+                    } catch (\Exception $e) {
+                        // Contact may have already left
+                    }
+
+                    // Auto-disposition the outbound call
+                    $activeCall->update(['status' => 'completed', 'ended_at' => now()]);
+                    $this->callStatus = 'ended';
+                }
+            }
+
+            // Redirect inbound caller from hold conference into agent's session conference
+            try {
+                $conferenceService->redirectCallToConference(
+                    $call->twilio_call_sid,
+                    $session->conference_name,
+                );
+            } catch (\Exception $e) {
+                return ['error' => 'Failed to redirect call: '.$e->getMessage()];
+            }
+
+            // Update call record
+            $call->update([
+                'status' => 'in-progress',
+                'answered_at' => now(),
+                'twilio_conference_sid' => $session->conference_name,
+            ]);
+
+            // Move pending inbound data to active call state
+            $this->activeCallId = $call->id;
+            $this->activeCallUlid = $call->ulid;
+            $this->activeContact = $this->pendingInboundContact;
+            $this->callStatus = 'connected';
+            $this->callingFrom = $call->from_number;
+            $this->isInboundCall = true;
+            $this->agentStatus = 'on_call';
+            $this->showDisposition = false;
+
+            if ($contactId = $this->pendingInboundContact['id'] ?? null) {
+                $this->loadContactState($contactId);
+                $this->loadConversation($contactId);
+            }
+
+            $this->resetPendingInbound();
+            $this->clearCaches();
+
+            return ['scenario' => 'session'];
+        }
+
+        // Scenario B: Agent is idle (no active session)
+        $holdConference = $this->pendingInboundConference;
+
+        $call->update([
+            'status' => 'in-progress',
+            'answered_at' => now(),
+        ]);
+
+        // Move pending inbound data to active call state
+        $this->activeCallId = $call->id;
+        $this->activeCallUlid = $call->ulid;
+        $this->activeContact = $this->pendingInboundContact;
+        $this->callStatus = 'connected';
+        $this->callingFrom = $call->from_number;
+        $this->isInboundCall = true;
+        $this->agentStatus = 'on_call';
+        $this->showDisposition = false;
+
+        if ($contactId = $this->pendingInboundContact['id'] ?? null) {
+            $this->loadContactState($contactId);
+            $this->loadConversation($contactId);
+        }
+
+        $this->resetPendingInbound();
+        $this->clearCaches();
+
+        return ['scenario' => 'idle', 'holdConference' => $holdConference];
+    }
+
+    /**
+     * Decline a pending inbound call — redirect caller to voicemail.
+     */
+    public function declineInboundCall(): void
+    {
+        if (! $this->pendingInboundCallId) {
+            return;
+        }
+
+        $call = Call::with('company')->find($this->pendingInboundCallId);
+
+        if ($call && $call->twilio_call_sid) {
+            try {
+                $conferenceService = app(ConferenceService::class);
+                $conferenceService->redirectCallToVoicemail($call->twilio_call_sid, $call->company);
+            } catch (\Exception $e) {
+                // Caller may have already hung up
+            }
+
+            $call->update([
+                'status' => 'declined',
+                'ended_at' => now(),
+            ]);
+        }
+
+        $this->resetPendingInbound();
+        $this->clearCaches();
+    }
+
+    /**
+     * Dismiss the inbound banner without accepting or declining.
+     * Caller stays on hold — agent can accept later.
+     */
+    public function holdInboundCall(): void
+    {
+        // Do nothing server-side — caller remains in hold conference.
+        // The UI hides the banner; the pending properties stay set
+        // so the agent can accept later.
+    }
+
+    protected function resetPendingInbound(): void
+    {
+        $this->pendingInboundCallId = null;
+        $this->pendingInboundContact = null;
+        $this->pendingInboundConference = null;
+        $this->pendingInboundCallSid = null;
     }
 
     public function updatedFilterCompanyId($value): void
@@ -1252,6 +1426,7 @@ class extends Component
         $this->amdResult = null;
         $this->isInboundCall = false;
         $this->showDisposition = false;
+        $this->resetPendingInbound();
         $this->isMuted = false;
         $this->smsConversation = [];
         $this->smsContactId = null;
@@ -1536,35 +1711,41 @@ class extends Component
             await window.__dialerSession.stop();
         },
 
-        answerInbound() {
-            if (window.__dialerSession && window.__dialerSession.isActive) {
-                // Agent is in a session — caller already joined the conference.
-                // Just update UI to show connected state.
-                $wire.set('callStatus', 'connected');
-                $wire.set('agentStatus', 'on_call');
+        async answerInbound() {
+            try {
+                const result = await $wire.acceptInboundCall();
+                if (result.error) {
+                    this.sessionError = result.error;
+                    setTimeout(() => { this.sessionError = null; }, 8000);
+                    return;
+                }
+                if (result.scenario === 'idle' && result.holdConference) {
+                    // Scenario B: agent joins the hold conference via WebRTC
+                    // Safe — no existing WebRTC connection to disrupt
+                    await window.__softphone.dial({ conference: result.holdConference });
+                }
+                // Scenario A: server already redirected caller into session conference — audio just works
                 this.inboundWaiting = false;
                 if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
                 this.startTimer();
-            } else if (window.__softphone && window.__softphone.hasPendingIncoming) {
-                // Not in session — accept the Device incoming call
-                window.__softphone.accept();
-                this.inboundWaiting = false;
-                if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
-                this.startTimer();
+            } catch (err) {
+                this.sessionError = 'Accept failed: ' + (err.message || err);
+                setTimeout(() => { this.sessionError = null; }, 8000);
             }
         },
 
-        declineInbound() {
-            if (window.__softphone && window.__softphone.hasPendingIncoming) {
-                window.__softphone.reject();
-            }
-            // If in session, remove the caller from the conference
-            if (window.__dialerSession && window.__dialerSession.isActive) {
-                $wire.hangUpContact();
-            }
+        async declineInbound() {
+            await $wire.declineInboundCall();
             this.inboundWaiting = false;
             if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
-            $wire.resetCallState();
+        },
+
+        holdAndFinishCurrent() {
+            // Dismiss banner — caller stays on hold in their conference.
+            // Agent finishes outbound call, then can accept via $wire.acceptInboundCall().
+            $wire.holdInboundCall();
+            this.inboundWaiting = false;
+            if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
         },
 
         toggleMute() {
@@ -1728,11 +1909,6 @@ class extends Component
                         // Delay queue reload slightly so server-side priority flag commits
                         setTimeout(() => { this.loadQueue(); }, 300);
                         $wire.onInboundCallRinging(e);
-
-                        // Start timer if auto-connected (agent already in conference)
-                        if (e.is_auto_connected) {
-                            this.startTimer();
-                        }
                     })
                     .listen('.dialer.call.connected', (e) => {
                         // Clear inbound waiting indicator (call is now connected)
@@ -1905,6 +2081,18 @@ class extends Component
                         <div class="rounded-full bg-green-600 px-3 py-1 text-sm font-mono font-bold text-white">
                             <span x-text="formatTime(inboundWaitSeconds)">0:00</span>
                         </div>
+                        <button x-on:click="answerInbound()" class="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-700">
+                            Accept
+                        </button>
+                        {{-- Show "Hold & Finish Current" only when agent is on an active call --}}
+                        <template x-if="$wire.callStatus === 'connected' || $wire.callStatus === 'ringing'">
+                            <button x-on:click="holdAndFinishCurrent()" class="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600">
+                                Hold
+                            </button>
+                        </template>
+                        <button x-on:click="declineInbound()" class="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700">
+                            Decline
+                        </button>
                     </div>
                 </div>
             </template>
@@ -2254,33 +2442,33 @@ class extends Component
                             </div>
                         @endif
 
-                        @if ($callStatus === 'ringing' && $isInboundCall)
-                            {{-- INBOUND CALL — ringing --}}
+                        @if ($pendingInboundCallId && $callStatus !== 'connected' && $callStatus !== 'ringing')
+                            {{-- INBOUND CALL — on hold, waiting for agent to accept --}}
                             <div class="text-center">
                                 <div class="mx-auto mb-3 flex size-20 items-center justify-center rounded-full bg-green-100 ring-4 ring-green-300 ring-offset-2 dark:bg-green-900/30 dark:ring-green-700">
                                     <flux:icon name="phone-arrow-down-left" class="size-10 animate-bounce text-green-600 dark:text-green-400" />
                                 </div>
                                 <div class="mt-3">
-                                    <span class="inline-flex items-center rounded-full bg-green-100 px-4 py-1.5 text-sm font-bold text-green-800 dark:bg-green-900/40 dark:text-green-300">INBOUND CALL</span>
+                                    <span class="inline-flex items-center rounded-full bg-green-100 px-4 py-1.5 text-sm font-bold text-green-800 dark:bg-green-900/40 dark:text-green-300">INBOUND CALL — ON HOLD</span>
                                 </div>
-                                <div class="mt-3 text-xl font-bold text-zinc-900 dark:text-zinc-100">{{ $activeContact['name'] ?? 'Unknown Caller' }}</div>
-                                <div class="font-mono text-base text-zinc-500">{{ $callingFrom ?? $activeContact['phone'] ?? '' }}</div>
+                                <div class="mt-3 text-xl font-bold text-zinc-900 dark:text-zinc-100">{{ $pendingInboundContact['name'] ?? 'Unknown Caller' }}</div>
+                                <div class="font-mono text-base text-zinc-500">{{ $pendingInboundContact['phone'] ?? '' }}</div>
 
                                 <div class="mt-6 flex justify-center gap-3">
                                     <flux:button variant="primary" icon="phone" x-on:click="answerInbound()" class="bg-green-600 hover:bg-green-700 !px-8 !py-3 !text-base">
-                                        Answer Call
+                                        Accept Call
                                     </flux:button>
                                     <flux:button variant="danger" icon="phone-x-mark" x-on:click="declineInbound()" class="!px-6 !py-3 !text-base">
                                         Decline
                                     </flux:button>
                                 </div>
                                 <div class="mt-2 text-xs text-zinc-400">
-                                    <span>Waiting: </span>
+                                    <span>Caller on hold: </span>
                                     <span class="font-mono font-bold" x-text="formatTime(inboundWaitSeconds)">0:00</span>
                                 </div>
                             </div>
                         @elseif ($callStatus === 'connected' && $isInboundCall)
-                            {{-- INBOUND CALL — auto-connected via active session --}}
+                            {{-- INBOUND CALL — connected via accept --}}
                             <div class="text-center">
                                 <div class="mx-auto mb-3 flex size-16 items-center justify-center rounded-full bg-green-100 ring-4 ring-green-400 dark:bg-green-900/30 dark:ring-green-600">
                                     <flux:icon name="phone-arrow-down-left" class="size-8 text-green-600 dark:text-green-400" />

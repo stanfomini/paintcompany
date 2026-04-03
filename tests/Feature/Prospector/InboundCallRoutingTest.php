@@ -79,7 +79,7 @@ it('creates inbound call record with direction inbound', function () {
 
     expect($call)->not->toBeNull();
     expect($call->direction)->toBe('inbound');
-    expect($call->status)->toBe('ringing');
+    expect($call->status)->toBe('holding');
     expect($call->company_id)->toBe($this->company->id);
     expect($call->agent_id)->toBe($agent->id);
     expect($call->from_number)->toBe('+17205559999');

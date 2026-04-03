@@ -17,9 +17,8 @@ class InboundCallRinging implements ShouldBroadcastNow
     public function __construct(
         public Call $call,
         public Company $company,
-        public string $conferenceName,
+        public string $holdConferenceName,
         public array $agentIds = [],
-        public bool $isAutoConnected = false,
     ) {}
 
     /**
@@ -46,7 +45,8 @@ class InboundCallRinging implements ShouldBroadcastNow
         return [
             'call_id' => $this->call->id,
             'call_ulid' => $this->call->ulid,
-            'conference_name' => $this->conferenceName,
+            'hold_conference_name' => $this->holdConferenceName,
+            'call_sid' => $this->call->twilio_call_sid,
             'contact' => [
                 'id' => $this->call->contact?->id,
                 'name' => $this->call->contact?->getFullName() ?? 'Unknown',
@@ -56,7 +56,6 @@ class InboundCallRinging implements ShouldBroadcastNow
             'company_name' => $this->company->name,
             'from_number' => $this->call->from_number,
             'to_number' => $this->call->to_number,
-            'is_auto_connected' => $this->isAutoConnected,
         ];
     }
 

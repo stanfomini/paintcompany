@@ -240,12 +240,43 @@ class ProspectorWebhookController extends Controller
      */
     public function conferenceStatus(Request $request): Response
     {
+        $conferenceName = $request->input('FriendlyName', '');
+        $event = $request->input('StatusCallbackEvent', '');
+
         Log::info('Prospector conference status', [
             'conference_sid' => $request->input('ConferenceSid'),
-            'status_event' => $request->input('StatusCallbackEvent'),
-            'friendly_name' => $request->input('FriendlyName'),
+            'status_event' => $event,
+            'friendly_name' => $conferenceName,
             'participant_sid' => $request->input('CallSid'),
         ]);
+
+        // Handle hold conference cleanup — caller hung up while waiting
+        if (str_starts_with($conferenceName, 'inbound-hold-') && $event === 'conference-end') {
+            $call = \App\Models\Prospector\Call::where('twilio_conference_sid', $conferenceName)
+                ->where('status', 'holding')
+                ->first();
+
+            if ($call) {
+                $call->update([
+                    'status' => 'missed',
+                    'ended_at' => now(),
+                ]);
+
+                // Broadcast to clear the agent's inbound banner
+                if ($call->agent_id) {
+                    broadcast(new \App\Events\Prospector\DialerCallEnded(
+                        call: $call,
+                        agentId: $call->agent_id,
+                    ))->toOthers();
+                }
+
+                Log::info('Hold conference ended — caller hung up', [
+                    'call_id' => $call->id,
+                    'contact_id' => $call->contact_id,
+                    'hold_conference' => $conferenceName,
+                ]);
+            }
+        }
 
         return response('', 200);
     }
