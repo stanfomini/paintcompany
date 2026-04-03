@@ -367,20 +367,12 @@ class TwilioVoiceController extends Controller
             isAutoConnected: $hasActiveSession,
         ));
 
-        // If no active session, dial the agent into the conference.
-        // This sends a Device incoming call that the agent can accept/decline.
-        if (! $hasActiveSession) {
-            try {
-                $conferenceService = app(ConferenceService::class);
-                $conferenceService->dialAgentIntoConference($conferenceName, $agent);
-            } catch (\Exception $e) {
-                Log::warning('Failed to dial agent into inbound conference', [
-                    'agent_id' => $agent->id,
-                    'conference' => $conferenceName,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
+        // NOTE: Do NOT call dialAgentIntoConference() here.
+        // On iPad/mobile, sending a second Device incoming call triggers
+        // getUserMedia() which mutes the existing conference audio.
+        // For now, inbound calls without an active session go to voicemail.
+        // TODO: Build proper inbound call holding pattern (temporary conference
+        // + call redirect via Twilio REST API, no Device involvement).
 
         Log::info('Inbound call routed', [
             'call_id' => $call->id,
