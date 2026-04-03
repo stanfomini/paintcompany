@@ -306,9 +306,18 @@ class TwilioVoiceController extends Controller
      */
     protected function routeToAgent(Company $company, Contact $contact, string $fromNumber, string $toNumber, string $callSid): Response
     {
-        // Find ALL available agents via the pivot table
+        // Find available agents via the pivot table.
+        // Include agents in dialer sessions (on_call/ringing) — inbound calls
+        // can route into their persistent conference.
         $agents = Agent::whereHas('companies', fn ($q) => $q->where('prospector_companies.id', $company->id))
-            ->whereIn('status', ['available', 'nearby'])
+            ->where(function ($q) {
+                $q->whereIn('status', ['available', 'nearby'])
+                    ->orWhere(function ($q2) {
+                        // Agents in active dialer sessions can receive inbound calls
+                        $q2->whereIn('status', ['on_call', 'ringing'])
+                            ->whereHas('dialerSessions', fn ($ds) => $ds->where('status', 'active'));
+                    });
+            })
             ->get();
 
         if ($agents->isEmpty()) {
@@ -320,8 +329,11 @@ class TwilioVoiceController extends Controller
             return $this->noAgentTwiml($company);
         }
 
+        // Prefer available agents first, then agents in active sessions
+        $agent = $agents->sortBy(fn ($a) => $a->status === 'available' ? 0 : 1)->first();
+
         // Check if the agent has an active dialer session — route into their persistent conference
-        $activeSession = \App\Models\Prospector\DialerSession::where('agent_id', $agents->first()->id)
+        $activeSession = \App\Models\Prospector\DialerSession::where('agent_id', $agent->id)
             ->where('status', 'active')
             ->first();
 
@@ -332,7 +344,7 @@ class TwilioVoiceController extends Controller
         $call = Call::create([
             'company_id' => $company->id,
             'contact_id' => $contact->id,
-            'agent_id' => $agents->first()->id,
+            'agent_id' => $agent->id,
             'direction' => 'inbound',
             'from_number' => $fromNumber,
             'to_number' => $toNumber,
