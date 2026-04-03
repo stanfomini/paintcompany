@@ -1743,7 +1743,7 @@ class extends Component
                 </flux:select>
 
                 <template x-if="sessionState === 'idle'">
-                    <flux:button size="sm" variant="primary" icon="play" x-on:click="startSession()" :disabled="! phoneReady">
+                    <flux:button size="sm" variant="primary" icon="play" x-on:click="startSession()" x-bind:disabled="!phoneReady">
                         Start
                     </flux:button>
                 </template>
@@ -1860,7 +1860,7 @@ class extends Component
                             <div class="flex items-center justify-between">
                                 <flux:heading size="sm">Contact</flux:heading>
                                 @if ($callStatus === 'idle')
-                                    <flux:button size="xs" variant="primary" icon="phone" x-on:click="directDial({{ $cd->id }})" :disabled="! phoneReady">
+                                    <flux:button size="xs" variant="primary" icon="phone" x-on:click="directDial({{ $cd->id }})" x-bind:disabled="!phoneReady">
                                         Call
                                     </flux:button>
                                 @endif
@@ -2268,7 +2268,7 @@ class extends Component
                                         placeholder="Enter phone number..."
                                         class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
                                     />
-                                    <flux:button size="sm" variant="primary" icon="phone" x-on:click="directManualDial()" :disabled="! phoneReady">Dial</flux:button>
+                                    <flux:button size="sm" variant="primary" icon="phone" x-on:click="directManualDial()" x-bind:disabled="!phoneReady">Dial</flux:button>
                                 </div>
                             </div>
                         @endif
