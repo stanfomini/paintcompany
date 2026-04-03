@@ -42,6 +42,7 @@ class extends Component
     public string $callStatus = 'idle'; // idle, ringing, connected, ended
     public ?string $callingFrom = null;
     public ?string $amdResult = null;
+    public bool $isInboundCall = false;
 
     // Parallel dialer state
     public array $parallelLines = []; // [{call_id, contact_name, phone, status}]
@@ -1186,6 +1187,7 @@ class extends Component
         $this->activeContact = $data['contact'] ?? null;
         $this->callStatus = 'ringing';
         $this->callingFrom = $data['from_number'] ?? null;
+        $this->isInboundCall = true;
 
         if ($contactId = $data['contact']['id'] ?? null) {
             $this->previewContactId = $contactId;
@@ -1215,6 +1217,7 @@ class extends Component
         $this->callStatus = 'idle';
         $this->callingFrom = null;
         $this->amdResult = null;
+        $this->isInboundCall = false;
         $this->showDisposition = false;
         $this->isMuted = false;
         $this->smsConversation = [];
@@ -1635,9 +1638,15 @@ class extends Component
 
                         if ('Notification' in window && Notification.permission === 'granted') {
                             new Notification('Inbound Call!', {
-                                body: e.contact.name + ' - ' + e.company_name + '\n' + e.from_number,
+                                body: (e.contact?.name || 'Unknown') + ' - ' + (e.company_name || '') + '\n' + (e.from_number || ''),
                                 icon: '/favicon.ico',
                             });
+                        }
+
+                        // Pause auto-dial so the inbound call gets full attention
+                        if (window.__dialerSession && this.autoDial) {
+                            this.autoDial = false;
+                            window.__dialerSession.pause();
                         }
 
                         // Delay queue reload slightly so server-side priority flag commits
@@ -2110,8 +2119,29 @@ class extends Component
                             </div>
                         @endif
 
-                        @if ($callStatus === 'ringing' && $dialerMode !== 'parallel')
-                            {{-- Ringing state --}}
+                        @if ($callStatus === 'ringing' && $isInboundCall)
+                            {{-- INBOUND CALL — big prominent banner --}}
+                            <div class="text-center">
+                                <div class="mx-auto mb-3 flex size-20 items-center justify-center rounded-full bg-green-100 ring-4 ring-green-300 ring-offset-2 dark:bg-green-900/30 dark:ring-green-700">
+                                    <flux:icon name="phone-arrow-down-left" class="size-10 animate-bounce text-green-600 dark:text-green-400" />
+                                </div>
+                                <div class="mt-3">
+                                    <flux:badge color="green" size="lg">INBOUND CALL</flux:badge>
+                                </div>
+                                <div class="mt-3 text-xl font-bold text-zinc-900 dark:text-zinc-100">{{ $activeContact['name'] ?? 'Unknown Caller' }}</div>
+                                <div class="font-mono text-base text-zinc-500">{{ $callingFrom ?? $activeContact['phone'] ?? '' }}</div>
+
+                                <div class="mt-6 flex justify-center gap-3">
+                                    <flux:button size="lg" variant="primary" icon="phone" x-on:click="answerInbound()" class="bg-green-600 hover:bg-green-700 px-8">
+                                        Answer Call
+                                    </flux:button>
+                                    <flux:button size="lg" variant="danger" icon="phone-x-mark" x-on:click="declineInbound()">
+                                        Decline
+                                    </flux:button>
+                                </div>
+                            </div>
+                        @elseif ($callStatus === 'ringing' && $dialerMode !== 'parallel')
+                            {{-- OUTBOUND ringing state --}}
                             <div class="text-center">
                                 <div class="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
                                     <flux:icon name="phone" class="size-7 animate-pulse text-amber-600 dark:text-amber-400" />
