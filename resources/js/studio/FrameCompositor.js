@@ -56,7 +56,7 @@ export default class FrameCompositor {
 
     setScene(sceneConfig) {
         this._scene = sceneConfig;
-        this.setOverlays(sceneConfig.overlays || []);
+        this.setOverlays(sceneConfig?.overlays || []);
     }
 
     setOverlays(overlays) {

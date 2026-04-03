@@ -1096,6 +1096,12 @@ class extends Component
             })"
             class="flex h-[calc(100vh-4rem)] flex-col lg:flex-row"
         >
+            {{-- Connection error banner --}}
+            <div x-show="connectionError" x-cloak class="border-b border-red-700 bg-red-900/90 px-4 py-2 text-sm text-red-200">
+                <span x-text="connectionError"></span>
+                <button type="button" @click="connectionError = null" class="ml-2 text-red-400 hover:text-white">&times;</button>
+            </div>
+
             {{-- Left column: Monitors + Sources + Scenes + Controls --}}
             <div class="flex flex-1 flex-col overflow-hidden">
                 {{-- Header bar --}}
@@ -2268,7 +2274,12 @@ class extends Component
                  * Call after startStudio() when the host is ready to go live.
                  */
                 async startBroadcasting() {
-                    if (!programCompositor || this.broadcasting) return;
+                    if (this.broadcasting) return;
+                    if (!programCompositor) {
+                        this.connectionError = 'Studio not ready — compositors failed to initialize. Try refreshing.';
+                        console.error('[Broadcast] programCompositor is null — studio init may have failed');
+                        return;
+                    }
 
                     try {
                         // Room is already connected from startStudio()
