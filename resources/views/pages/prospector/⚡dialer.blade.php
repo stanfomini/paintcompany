@@ -732,6 +732,34 @@ class extends Component
     // Call Controls
     // ──────────────────────────────────────
 
+    /**
+     * End the current contact's call by removing them from the conference.
+     * The agent stays in the persistent conference for the next call.
+     */
+    public function hangUpContact(): void
+    {
+        if (! $this->activeCallId) {
+            return;
+        }
+
+        $call = Call::find($this->activeCallId);
+
+        if (! $call || ! $call->twilio_call_sid || ! $call->twilio_conference_sid) {
+            return;
+        }
+
+        try {
+            $conferenceService = app(ConferenceService::class);
+            $conferenceService->removeParticipant($call->twilio_conference_sid, $call->twilio_call_sid);
+        } catch (\Exception $e) {
+            // Contact may have already left — that's fine
+        }
+
+        $this->callStatus = 'ended';
+        $this->showDisposition = true;
+        $this->agentStatus = 'available';
+    }
+
     // ──────────────────────────────────────
     // Session Management (Persistent Conference)
     // ──────────────────────────────────────
@@ -1514,7 +1542,13 @@ class extends Component
         },
 
         hangUp() {
-            if (window.__softphone) window.__softphone.hangup();
+            if (window.__dialerSession && window.__dialerSession.isActive) {
+                // In persistent conference: remove the CONTACT, keep agent connected
+                $wire.hangUpContact();
+            } else {
+                // Not in a session: disconnect the agent's own call
+                if (window.__softphone) window.__softphone.hangup();
+            }
         },
 
         sendDtmf(digit) {
