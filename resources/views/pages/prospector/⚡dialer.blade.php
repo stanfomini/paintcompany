@@ -335,6 +335,23 @@ class extends Component
             ->first();
     }
 
+    #[Computed]
+    public function hasVmTemplate(): bool
+    {
+        if (! $this->activeContact) {
+            return false;
+        }
+
+        $contactId = $this->activeContact['id'] ?? null;
+        if (! $contactId) {
+            return false;
+        }
+
+        $contact = Contact::with('company.defaultRvmTemplate')->find($contactId);
+
+        return $contact?->company?->defaultRvmTemplate?->audio_path !== null;
+    }
+
     // ──────────────────────────────────────
     // Queue & Preview
     // ──────────────────────────────────────
@@ -542,27 +559,47 @@ class extends Component
     // Voicemail Drop
     // ──────────────────────────────────────
 
-    public function dropVoicemail(int $templateId): void
+    /**
+     * Drop a voicemail on the active call — plays pre-recorded audio
+     * on the contact's call leg, then ends the call.
+     */
+    public function dropVoicemailOnCall(): void
     {
-        $contactId = $this->activeContact['id'] ?? null;
-
-        if (! $contactId || ! $this->agent) {
+        if (! $this->activeCallId || ! $this->agent) {
             return;
         }
 
-        $contact = Contact::with('company')->find($contactId);
-        $template = RvmTemplate::find($templateId);
+        $call = Call::with('contact.company.defaultRvmTemplate')->find($this->activeCallId);
 
-        if (! $contact || ! $template || ! $contact->company) {
+        if (! $call || ! $call->twilio_call_sid) {
+            return;
+        }
+
+        $template = $call->contact?->company?->defaultRvmTemplate;
+
+        if (! $template || ! $template->audio_path) {
             return;
         }
 
         try {
-            $service = app(RvmService::class);
-            $service->drop($contact->company, $contact, $template);
+            $audioUrl = ConferenceService::getPublicAudioUrl($template);
+            $conferenceService = app(ConferenceService::class);
+            $conferenceService->playAudioOnCall($call->twilio_call_sid, $audioUrl);
+
+            $call->update([
+                'status' => 'completed',
+                'disposition' => 'voicemail',
+                'disposition_notes' => 'Manual VM drop',
+                'ended_at' => now(),
+            ]);
         } catch (\Exception $e) {
-            // Error logged by service
+            // Contact may have already hung up
         }
+
+        $this->callStatus = 'ended';
+        $this->showDisposition = true;
+        $this->agentStatus = 'available';
+        $this->clearCaches();
     }
 
     // ──────────────────────────────────────
@@ -1837,6 +1874,15 @@ class extends Component
             }
         },
 
+        async dropVm() {
+            await $wire.dropVoicemailOnCall();
+            this.stopTimer();
+            // In session mode, the DialerSession should advance
+            if (window.__dialerSession) {
+                window.__dialerSession.onCallEnded();
+            }
+        },
+
         sendDtmf(digit) {
             if (window.__softphone) window.__softphone.sendDtmf(digit);
         },
@@ -2003,7 +2049,7 @@ class extends Component
                         // WebRTC and break auto-dial.
                         $wire.onCallEnded(e);
                         if (window.__dialerSession) {
-                            if (e.disposition === 'no_answer' || e.disposition === 'busy') {
+                            if (e.disposition === 'no_answer' || e.disposition === 'busy' || e.disposition === 'voicemail') {
                                 window.__dialerSession.onNoAnswer();
                             } else {
                                 window.__dialerSession.onCallEnded();
@@ -2612,6 +2658,11 @@ class extends Component
                                     <flux:button size="sm" variant="filled" icon="hashtag" x-on:click="showDtmf = !showDtmf">
                                         DTMF
                                     </flux:button>
+                                    @if ($this->hasVmTemplate)
+                                        <flux:button size="sm" variant="filled" icon="inbox-arrow-down" x-on:click="dropVm()" class="!bg-purple-600 hover:!bg-purple-700 !text-white">
+                                            Drop VM
+                                        </flux:button>
+                                    @endif
                                     <flux:button size="sm" variant="danger" icon="phone-x-mark" x-on:click="hangUp()">
                                         Hang Up
                                     </flux:button>
