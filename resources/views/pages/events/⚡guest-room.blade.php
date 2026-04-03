@@ -310,6 +310,16 @@ new #[Layout('layouts.video-call')] class extends Component
                                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /><line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
                                 </template>
                             </button>
+
+                            {{-- Screen Share Toggle --}}
+                            <button
+                                type="button"
+                                @click="toggleScreenShare()"
+                                class="w-10 h-10 rounded-full flex items-center justify-center transition-colors"
+                                :class="screenSharing ? 'bg-purple-600 text-white' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'"
+                            >
+                                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25A2.25 2.25 0 0 1 5.25 3h13.5A2.25 2.25 0 0 1 21 5.25Z" /></svg>
+                            </button>
                         </div>
 
                         {{-- Device Switcher --}}
@@ -411,6 +421,7 @@ new #[Layout('layouts.video-call')] class extends Component
         Alpine.data('livekitGuest', (config) => {
             let localStream = null;
             let guestRoom = null;        // LiveKit room (single connection for viewing + publishing)
+            let screenStream = null;     // Screen share MediaStream
             let audioContext = null;
             let analyser = null;
             let animationFrame = null;
@@ -427,6 +438,7 @@ new #[Layout('layouts.video-call')] class extends Component
                 activeMicId: '',
                 hostTrackAttached: false,
                 roomConnected: false,
+                screenSharing: false,
 
                 async init() {
                     await this.startLocalPreview();
@@ -745,6 +757,19 @@ new #[Layout('layouts.video-call')] class extends Component
                             audioBitrate: 48_000,
                         });
                     }
+
+                    // Publish screen share if already active
+                    if (screenStream && this.screenSharing) {
+                        const screenTrack = screenStream.getVideoTracks()[0];
+                        if (screenTrack) {
+                            await localParticipant.publishTrack(screenTrack, {
+                                name: 'screen',
+                                source: 'screen_share',
+                                videoEncoding: { maxBitrate: 3_000_000, maxFramerate: 30 },
+                                videoCodec: 'vp8',
+                            });
+                        }
+                    }
                 },
 
                 async _unpublishLocalTracks() {
@@ -758,6 +783,55 @@ new #[Layout('layouts.video-call')] class extends Component
                         if (pub.track) {
                             await localParticipant.unpublishTrack(pub.track);
                         }
+                    }
+                },
+
+                async toggleScreenShare() {
+                    if (this.screenSharing) {
+                        // Stop screen share
+                        if (screenStream) {
+                            screenStream.getTracks().forEach(t => t.stop());
+                            screenStream = null;
+                        }
+                        // Unpublish screen track from LiveKit if live
+                        if (guestRoom && this.guestStatus === 'live') {
+                            const pubs = Array.from(guestRoom.localParticipant.trackPublications.values());
+                            for (const pub of pubs) {
+                                if (pub.trackName === 'screen') {
+                                    await guestRoom.localParticipant.unpublishTrack(pub.track);
+                                }
+                            }
+                        }
+                        this.screenSharing = false;
+                        return;
+                    }
+
+                    try {
+                        screenStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+                            audio: false,
+                        });
+
+                        // Publish to LiveKit if already live
+                        if (guestRoom && this.guestStatus === 'live') {
+                            const screenTrack = screenStream.getVideoTracks()[0];
+                            await guestRoom.localParticipant.publishTrack(screenTrack, {
+                                name: 'screen',
+                                source: 'screen_share',
+                                videoEncoding: { maxBitrate: 3_000_000, maxFramerate: 30 },
+                                videoCodec: 'vp8',
+                            });
+                        }
+
+                        this.screenSharing = true;
+
+                        // Auto-stop when user clicks browser's "Stop sharing" button
+                        screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+                            this.screenSharing = false;
+                            screenStream = null;
+                        });
+                    } catch (err) {
+                        console.warn('[Guest] Screen share cancelled:', err.message);
                     }
                 },
 

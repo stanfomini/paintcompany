@@ -2342,16 +2342,22 @@ class extends Component
                         const guestId = participant.identity;
 
                         if (track.kind === 'video') {
-                            // Create a MediaStream from the LiveKit track and add to SourceManager
                             const mediaStream = new MediaStream([track.mediaStreamTrack]);
-                            const slotKey = this._guestSlotKey(guestId);
                             const name = participant.name || guestId;
+                            const isScreen = publication.source === 'screen_share' || track.source === 'screen_share';
 
-                            sourceManager.addSource(slotKey, mediaStream, name);
-                            console.log(`[Studio] Guest video from LiveKit: ${slotKey} (${name})`);
-
-                            // Update guest status in Alpine
-                            this._updateGuestStatus(guestId, 'live', name);
+                            if (isScreen) {
+                                // Guest screen share — add as separate source
+                                const screenKey = `${guestId}-screen`;
+                                sourceManager.addSource(screenKey, mediaStream, `${name} (Screen)`);
+                                console.log(`[Studio] Guest screen share from LiveKit: ${screenKey}`);
+                            } else {
+                                // Guest camera — add with slot key
+                                const slotKey = this._guestSlotKey(guestId);
+                                sourceManager.addSource(slotKey, mediaStream, name);
+                                console.log(`[Studio] Guest video from LiveKit: ${slotKey} (${name})`);
+                                this._updateGuestStatus(guestId, 'live', name);
+                            }
                         }
 
                         if (track.kind === 'audio') {
@@ -2371,9 +2377,16 @@ class extends Component
                         if (!participant.identity.startsWith('guest-')) return;
 
                         if (track.kind === 'video') {
-                            const slotKey = this._guestSlotKey(participant.identity);
-                            if (sourceManager) sourceManager.removeSource(slotKey);
-                            console.log(`[Studio] Guest video removed: ${slotKey}`);
+                            const isScreen = publication.source === 'screen_share' || track.source === 'screen_share';
+                            if (isScreen) {
+                                const screenKey = `${participant.identity}-screen`;
+                                if (sourceManager) sourceManager.removeSource(screenKey);
+                                console.log(`[Studio] Guest screen share removed: ${screenKey}`);
+                            } else {
+                                const slotKey = this._guestSlotKey(participant.identity);
+                                if (sourceManager) sourceManager.removeSource(slotKey);
+                                console.log(`[Studio] Guest video removed: ${slotKey}`);
+                            }
                         }
 
                         if (track.kind === 'audio') {
