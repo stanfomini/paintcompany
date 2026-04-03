@@ -1537,11 +1537,33 @@ class extends Component
         },
 
         answerInbound() {
-            if (window.__softphone) window.__softphone.accept();
+            if (window.__dialerSession && window.__dialerSession.isActive) {
+                // Agent is in a session — caller already joined the conference.
+                // Just update UI to show connected state.
+                $wire.set('callStatus', 'connected');
+                $wire.set('agentStatus', 'on_call');
+                this.inboundWaiting = false;
+                if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
+                this.startTimer();
+            } else if (window.__softphone && window.__softphone.hasPendingIncoming) {
+                // Not in session — accept the Device incoming call
+                window.__softphone.accept();
+                this.inboundWaiting = false;
+                if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
+                this.startTimer();
+            }
         },
 
         declineInbound() {
-            if (window.__softphone) window.__softphone.reject();
+            if (window.__softphone && window.__softphone.hasPendingIncoming) {
+                window.__softphone.reject();
+            }
+            // If in session, remove the caller from the conference
+            if (window.__dialerSession && window.__dialerSession.isActive) {
+                $wire.hangUpContact();
+            }
+            this.inboundWaiting = false;
+            if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
             $wire.resetCallState();
         },
 
@@ -2233,7 +2255,7 @@ class extends Component
                         @endif
 
                         @if ($callStatus === 'ringing' && $isInboundCall)
-                            {{-- INBOUND CALL — needs agent to answer (no active session) --}}
+                            {{-- INBOUND CALL — ringing --}}
                             <div class="text-center">
                                 <div class="mx-auto mb-3 flex size-20 items-center justify-center rounded-full bg-green-100 ring-4 ring-green-300 ring-offset-2 dark:bg-green-900/30 dark:ring-green-700">
                                     <flux:icon name="phone-arrow-down-left" class="size-10 animate-bounce text-green-600 dark:text-green-400" />
@@ -2251,6 +2273,10 @@ class extends Component
                                     <flux:button variant="danger" icon="phone-x-mark" x-on:click="declineInbound()" class="!px-6 !py-3 !text-base">
                                         Decline
                                     </flux:button>
+                                </div>
+                                <div class="mt-2 text-xs text-zinc-400">
+                                    <span>Waiting: </span>
+                                    <span class="font-mono font-bold" x-text="formatTime(inboundWaitSeconds)">0:00</span>
                                 </div>
                             </div>
                         @elseif ($callStatus === 'connected' && $isInboundCall)
