@@ -1086,7 +1086,7 @@ class extends Component
         <div
             x-data="livekitProducer"
             x-init="$nextTick(() => {
-                scenes = @js($scenes);
+                scenes = (@js($scenes)).map(s => ({ ...s, overlays: s.overlays || [] }));
                 liveSceneIndex = @js($activeSceneIndex);
                 previewSceneIndex = @js($activeSceneIndex);
                 liveGuests = @js($connectedGuests->merge($this->guests)->unique('id')->map(fn ($g) => ['id' => $g->id, 'name' => $g->name, 'status' => $g->status, 'slot_number' => $g->slot_number, 'identity' => $g->getLivekitIdentity()])->values()->toArray());
@@ -2068,7 +2068,7 @@ class extends Component
                     });
 
                     this.$wire.on('template-loaded', ({ scenes }) => {
-                        this.scenes = scenes;
+                        this.scenes = scenes.map(s => ({ ...s, overlays: s.overlays || [] }));
                         this.previewSceneIndex = Math.min(this.previewSceneIndex, scenes.length - 1);
                         const scene = this.scenes[this.previewSceneIndex];
                         if (previewCompositor && scene) {
@@ -2251,6 +2251,15 @@ class extends Component
                     }
 
                     this.connected = true;
+
+                    // 5. Auto-start captions if any scene has a caption overlay
+                    const hasCaption = this.scenes.some(s =>
+                        (s.overlays || []).some(o => o.type === 'caption' && o.visible !== false)
+                    );
+                    if (hasCaption) {
+                        this.enableCaptions();
+                    }
+
                     console.log('[Studio] Setup complete — ready to broadcast');
                 },
 
@@ -2411,15 +2420,21 @@ class extends Component
                     this.previewSceneIndex = index;
                     const scene = this.scenes[index];
                     if (!scene) return;
+                    if (!scene.overlays) scene.overlays = [];
 
                     if (previewCompositor) {
                         previewCompositor.setScene(scene);
-                        previewCompositor.setOverlays(scene.overlays || []);
+                        previewCompositor.setOverlays(scene.overlays);
+                    }
+
+                    // Auto-start captions if this scene has a caption overlay
+                    if (!captionEngine && scene.overlays.some(o => o.type === 'caption' && o.visible !== false)) {
+                        this.enableCaptions();
                     }
 
                     if (canvasEditor && this.editorMode) {
                         canvasEditor.setSlots(scene.slots || []);
-                        canvasEditor.setOverlays(scene.overlays || []);
+                        canvasEditor.setOverlays(scene.overlays);
                         this.selectedItem = null;
                     }
                 },
@@ -2428,10 +2443,16 @@ class extends Component
                     this.liveSceneIndex = this.previewSceneIndex;
                     const scene = this.scenes[this.liveSceneIndex];
                     if (!scene) return;
+                    if (!scene.overlays) scene.overlays = [];
 
                     if (programCompositor) {
                         programCompositor.setScene(scene);
-                        programCompositor.setOverlays(scene.overlays || []);
+                        programCompositor.setOverlays(scene.overlays);
+                    }
+
+                    // Ensure captions are running if this scene uses them
+                    if (!captionEngine && scene.overlays.some(o => o.type === 'caption' && o.visible !== false)) {
+                        this.enableCaptions();
                     }
 
                     this.$wire.switchScene(this.liveSceneIndex);
