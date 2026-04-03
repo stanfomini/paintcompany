@@ -229,6 +229,31 @@ export default class SoftphoneManager {
 
         try {
             this._connection = await this._device.connect({ params });
+
+            // Wait for the call to be fully accepted (TwiML processed, media flowing)
+            // Device.connect() resolves immediately with a Call object, but the
+            // conference isn't created until the TwiML is processed by Twilio.
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Call connection timeout'));
+                }, 15000);
+
+                this._connection.on('accept', () => {
+                    clearTimeout(timeout);
+                    resolve();
+                });
+
+                this._connection.on('disconnect', () => {
+                    clearTimeout(timeout);
+                    reject(new Error('Call disconnected before connecting'));
+                });
+
+                this._connection.on('cancel', () => {
+                    clearTimeout(timeout);
+                    reject(new Error('Call canceled'));
+                });
+            });
+
             this._state = 'connected';
             this._emit('state-change', 'connected');
             this._emit('connected', this._connection);
@@ -241,6 +266,7 @@ export default class SoftphoneManager {
                 this._emit('error', 'Call error: ' + (err.message || err));
             });
         } catch (err) {
+            this._connection = null;
             this._state = 'idle';
             this._emit('state-change', 'idle');
             this._emit('error', 'Failed to connect: ' + (err.message || err));
