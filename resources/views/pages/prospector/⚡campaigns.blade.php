@@ -32,6 +32,8 @@ class extends Component
     public string $status = 'draft';
     public bool $useLocalPresence = true;
     public int $priority = 10;
+    public string $companyScope = 'all'; // 'all' or 'single'
+    public ?int $companyId = null;
     public bool $autoVmDrop = false;
     public ?int $defaultRvmTemplateId = null;
 
@@ -56,6 +58,14 @@ class extends Component
             ->when($this->filterStatus, fn ($q) => $q->where('status', $this->filterStatus))
             ->orderByDesc('created_at')
             ->paginate(15);
+    }
+
+    #[Computed]
+    public function availableCompanies(): \Illuminate\Support\Collection
+    {
+        return \App\Models\Prospector\Company::where('is_active', true)
+            ->orderBy('name')
+            ->get();
     }
 
     #[Computed]
@@ -90,11 +100,13 @@ class extends Component
         $this->name = $campaign->name;
         $this->description = $campaign->description ?? '';
         $this->status = $campaign->status;
+        $this->companyScope = $campaign->company_id ? 'single' : 'all';
+        $this->companyId = $campaign->company_id;
         $this->useLocalPresence = $campaign->use_local_presence;
         $this->priority = $campaign->priority ?? 10;
         $this->autoVmDrop = $campaign->auto_vm_drop ?? false;
         $this->defaultRvmTemplateId = $campaign->default_rvm_template_id;
-        unset($this->availableRvmTemplates);
+        unset($this->availableRvmTemplates, $this->availableCompanies);
         $this->showModal = true;
     }
 
@@ -120,6 +132,8 @@ class extends Component
             ],
             'description' => ['nullable', 'string', 'max:1000'],
             'status' => ['required', Rule::in(['draft', 'active', 'paused', 'completed'])],
+            'companyScope' => ['required', Rule::in(['all', 'single'])],
+            'companyId' => ['nullable', 'required_if:companyScope,single', 'exists:prospector_companies,id'],
             'useLocalPresence' => ['boolean'],
             'priority' => ['required', 'integer', 'min:1', 'max:100'],
             'autoVmDrop' => ['boolean'],
@@ -130,6 +144,7 @@ class extends Component
             'name' => $this->name,
             'description' => $this->description ?: null,
             'status' => $this->status,
+            'company_id' => $this->companyScope === 'single' ? $this->companyId : null,
             'use_local_presence' => $this->useLocalPresence,
             'priority' => $this->priority,
             'auto_vm_drop' => $this->autoVmDrop,
@@ -214,6 +229,8 @@ class extends Component
         $this->name = '';
         $this->description = '';
         $this->status = 'draft';
+        $this->companyScope = 'all';
+        $this->companyId = null;
         $this->useLocalPresence = true;
         $this->priority = 10;
         $this->autoVmDrop = false;
@@ -273,6 +290,7 @@ class extends Component
         <flux:table>
             <flux:table.columns>
                 <flux:table.column>{{ __('Campaign') }}</flux:table.column>
+                <flux:table.column>{{ __('Company') }}</flux:table.column>
                 <flux:table.column>{{ __('Status') }}</flux:table.column>
                 <flux:table.column>{{ __('Local Presence') }}</flux:table.column>
                 <flux:table.column>{{ __('Auto-VM') }}</flux:table.column>
@@ -293,6 +311,14 @@ class extends Component
                             </a>
                             @if ($campaign->description)
                                 <div class="max-w-xs truncate text-xs text-zinc-500 dark:text-zinc-400">{{ $campaign->description }}</div>
+                            @endif
+                        </flux:table.cell>
+
+                        <flux:table.cell>
+                            @if ($campaign->company)
+                                <flux:badge size="sm" color="blue">{{ $campaign->company->name }}</flux:badge>
+                            @else
+                                <flux:badge size="sm" color="zinc">{{ __('All Companies') }}</flux:badge>
                             @endif
                         </flux:table.cell>
 
@@ -403,6 +429,35 @@ class extends Component
                 :placeholder="__('Optional campaign description...')"
                 rows="2"
             />
+
+            <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+                <flux:label class="mb-2">{{ __('Company Assignment') }}</flux:label>
+                <div class="flex gap-3">
+                    <label class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition
+                        {{ $companyScope === 'all' ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-900/20 dark:text-blue-300' : 'border-zinc-200 dark:border-zinc-700' }}">
+                        <input type="radio" wire:model.live="companyScope" value="all" class="sr-only" />
+                        <flux:icon name="globe-alt" variant="micro" />
+                        {{ __('All Companies') }}
+                    </label>
+                    <label class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition
+                        {{ $companyScope === 'single' ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-900/20 dark:text-blue-300' : 'border-zinc-200 dark:border-zinc-700' }}">
+                        <input type="radio" wire:model.live="companyScope" value="single" class="sr-only" />
+                        <flux:icon name="building-office" variant="micro" />
+                        {{ __('One Company') }}
+                    </label>
+                </div>
+
+                @if ($companyScope === 'single')
+                    <div class="mt-3">
+                        <flux:select wire:model="companyId" :placeholder="__('Select company...')">
+                            <flux:select.option value="">{{ __('Select company...') }}</flux:select.option>
+                            @foreach ($this->availableCompanies as $company)
+                                <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                    </div>
+                @endif
+            </div>
 
             <flux:select wire:model="status" :label="__('Status')" required>
                 <flux:select.option value="draft">{{ __('Draft') }}</flux:select.option>
