@@ -1213,9 +1213,14 @@ class extends Component
     {
         $this->activeCallId = $data['call_id'] ?? null;
         $this->activeContact = $data['contact'] ?? null;
-        $this->callStatus = 'ringing';
         $this->callingFrom = $data['from_number'] ?? null;
         $this->isInboundCall = true;
+
+        // If agent is in a session, the caller joins the conference automatically —
+        // show connected state immediately. Otherwise, show ringing (needs answer).
+        $isAutoConnected = $data['is_auto_connected'] ?? false;
+        $this->callStatus = $isAutoConnected ? 'connected' : 'ringing';
+        $this->agentStatus = $isAutoConnected ? 'on_call' : 'ringing';
 
         if ($contactId = $data['contact']['id'] ?? null) {
             $this->previewContactId = $contactId;
@@ -1686,6 +1691,11 @@ class extends Component
                         // Delay queue reload slightly so server-side priority flag commits
                         setTimeout(() => { this.loadQueue(); }, 300);
                         $wire.onInboundCallRinging(e);
+
+                        // Start timer if auto-connected (agent already in conference)
+                        if (e.is_auto_connected) {
+                            this.startTimer();
+                        }
                     })
                     .listen('.dialer.call.connected', (e) => {
                         $wire.onCallConnected(e);
@@ -1832,15 +1842,30 @@ class extends Component
             <div class="flex gap-2 overflow-x-auto border-b border-zinc-200 px-4 py-2 dark:border-zinc-700"
                  x-ref="queueScroll">
                 <template x-for="item in queueItems" :key="item.id">
-                    <div class="flex w-36 flex-shrink-0 cursor-pointer flex-col rounded-lg border border-zinc-200 p-2 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    <div class="flex w-36 flex-shrink-0 cursor-pointer flex-col rounded-lg border p-2 text-xs"
                          x-on:click="$wire.previewContact(item.id)"
-                         :class="{ 'ring-2 ring-blue-500': $wire.previewContactId === item.id }">
+                         :class="{
+                            'ring-2 ring-blue-500': $wire.previewContactId === item.id,
+                            'border-green-400 bg-green-50 ring-2 ring-green-400 animate-pulse dark:border-green-600 dark:bg-green-900/30': item.is_priority && item.priority_reason === 'inbound_call',
+                            'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20': item.is_priority && item.priority_reason !== 'inbound_call',
+                            'border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800': !item.is_priority,
+                         }">
                         <div class="mb-1 flex items-center gap-1.5">
-                            <span class="inline-block size-2 flex-shrink-0 rounded-full" :style="'background:' + (item.company_color || '#6b7280')"></span>
+                            <template x-if="item.is_priority && item.priority_reason === 'inbound_call'">
+                                <flux:icon name="phone-arrow-down-left" variant="micro" class="shrink-0 text-green-600 dark:text-green-400" />
+                            </template>
+                            <template x-if="!(item.is_priority && item.priority_reason === 'inbound_call')">
+                                <span class="inline-block size-2 flex-shrink-0 rounded-full" :style="'background:' + (item.company_color || '#6b7280')"></span>
+                            </template>
                             <span class="truncate font-medium text-zinc-900 dark:text-zinc-100" x-text="item.name"></span>
                         </div>
                         <div class="truncate text-zinc-500" x-text="item.phone"></div>
-                        <div class="mt-0.5 text-zinc-400" x-text="item.calls_today !== undefined ? ('Call ' + item.calls_today + '/' + (item.max_calls_today || '?') + ' · ' + (item.total_attempts || 0) + '/' + (item.max_total || '?')) : ''"></div>
+                        <template x-if="item.is_priority && item.priority_reason === 'inbound_call'">
+                            <div class="mt-0.5 font-semibold text-green-700 dark:text-green-400">Inbound Call</div>
+                        </template>
+                        <template x-if="!(item.is_priority && item.priority_reason === 'inbound_call')">
+                            <div class="mt-0.5 text-zinc-400" x-text="item.calls_today !== undefined ? ('Call ' + item.calls_today + '/' + (item.max_calls_today || '?') + ' · ' + (item.total_attempts || 0) + '/' + (item.max_total || '?')) : ''"></div>
+                        </template>
                     </div>
                 </template>
                 <div x-show="queueItems.length === 0" class="py-3 text-xs text-zinc-400">
@@ -2157,7 +2182,7 @@ class extends Component
                         @endif
 
                         @if ($callStatus === 'ringing' && $isInboundCall)
-                            {{-- INBOUND CALL — big prominent banner --}}
+                            {{-- INBOUND CALL — needs agent to answer (no active session) --}}
                             <div class="text-center">
                                 <div class="mx-auto mb-3 flex size-20 items-center justify-center rounded-full bg-green-100 ring-4 ring-green-300 ring-offset-2 dark:bg-green-900/30 dark:ring-green-700">
                                     <flux:icon name="phone-arrow-down-left" class="size-10 animate-bounce text-green-600 dark:text-green-400" />
@@ -2174,6 +2199,35 @@ class extends Component
                                     </flux:button>
                                     <flux:button variant="danger" icon="phone-x-mark" x-on:click="declineInbound()" class="!px-6 !py-3 !text-base">
                                         Decline
+                                    </flux:button>
+                                </div>
+                            </div>
+                        @elseif ($callStatus === 'connected' && $isInboundCall)
+                            {{-- INBOUND CALL — auto-connected via active session --}}
+                            <div class="text-center">
+                                <div class="mx-auto mb-3 flex size-16 items-center justify-center rounded-full bg-green-100 ring-4 ring-green-400 dark:bg-green-900/30 dark:ring-green-600">
+                                    <flux:icon name="phone-arrow-down-left" class="size-8 text-green-600 dark:text-green-400" />
+                                </div>
+                                <div class="mt-2">
+                                    <span class="inline-flex items-center rounded-full bg-green-100 px-4 py-1.5 text-sm font-bold text-green-800 dark:bg-green-900/40 dark:text-green-300">INBOUND CALL — CONNECTED</span>
+                                </div>
+                                <div class="mt-3 text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ $activeContact['name'] ?? 'Unknown Caller' }}</div>
+                                <div class="font-mono text-sm text-zinc-500">{{ $callingFrom ?? $activeContact['phone'] ?? '' }}</div>
+                                <div class="mt-1">
+                                    <span class="font-mono text-sm font-bold text-green-600 dark:text-green-400" x-text="formatTime(callTimer)">00:00</span>
+                                </div>
+
+                                <div class="mt-4 flex justify-center gap-2">
+                                    <flux:button
+                                        size="sm"
+                                        :variant="$isMuted ? 'danger' : 'filled'"
+                                        :icon="$isMuted ? 'speaker-x-mark' : 'speaker-wave'"
+                                        x-on:click="toggleMute()"
+                                    >
+                                        <span x-text="muted ? 'Unmute' : 'Mute'">Mute</span>
+                                    </flux:button>
+                                    <flux:button size="sm" variant="danger" icon="phone-x-mark" x-on:click="hangUp()">
+                                        End Call
                                     </flux:button>
                                 </div>
                             </div>

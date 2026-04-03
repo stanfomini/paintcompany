@@ -19,6 +19,7 @@ class InboundCallRinging implements ShouldBroadcastNow
         public Company $company,
         public string $conferenceName,
         public array $agentIds = [],
+        public bool $isAutoConnected = false,
     ) {}
 
     /**
@@ -55,6 +56,7 @@ class InboundCallRinging implements ShouldBroadcastNow
             'company_name' => $this->company->name,
             'from_number' => $this->call->from_number,
             'to_number' => $this->call->to_number,
+            'is_auto_connected' => $this->isAutoConnected,
         ];
     }
 

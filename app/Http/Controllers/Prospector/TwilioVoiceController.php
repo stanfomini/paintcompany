@@ -341,6 +341,8 @@ class TwilioVoiceController extends Controller
             ? $activeSession->conference_name
             : 'inbound-'.Str::ulid();
 
+        $hasActiveSession = $activeSession !== null;
+
         $call = Call::create([
             'company_id' => $company->id,
             'contact_id' => $contact->id,
@@ -349,8 +351,10 @@ class TwilioVoiceController extends Controller
             'from_number' => $fromNumber,
             'to_number' => $toNumber,
             'twilio_call_sid' => $callSid,
-            'status' => 'ringing',
+            'twilio_conference_sid' => $conferenceName,
+            'status' => $hasActiveSession ? 'in-progress' : 'ringing',
             'started_at' => now(),
+            'answered_at' => $hasActiveSession ? now() : null,
         ]);
 
         $agentIds = $agents->pluck('id')->all();
@@ -360,14 +364,31 @@ class TwilioVoiceController extends Controller
             company: $company,
             conferenceName: $conferenceName,
             agentIds: $agentIds,
+            isAutoConnected: $hasActiveSession,
         ));
 
-        Log::info('Inbound call routed to agents', [
+        // If no active session, dial the agent into the conference.
+        // This sends a Device incoming call that the agent can accept/decline.
+        if (! $hasActiveSession) {
+            try {
+                $conferenceService = app(ConferenceService::class);
+                $conferenceService->dialAgentIntoConference($conferenceName, $agent);
+            } catch (\Exception $e) {
+                Log::warning('Failed to dial agent into inbound conference', [
+                    'agent_id' => $agent->id,
+                    'conference' => $conferenceName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        Log::info('Inbound call routed', [
             'call_id' => $call->id,
             'company_id' => $company->id,
-            'agent_ids' => $agentIds,
+            'agent_id' => $agent->id,
             'contact_id' => $contact->id,
             'conference' => $conferenceName,
+            'auto_connected' => $hasActiveSession,
         ]);
 
         return $this->conferenceJoinTwiml($conferenceName);
