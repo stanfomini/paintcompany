@@ -1400,6 +1400,37 @@ class extends Component
         // so the agent can accept later.
     }
 
+    /**
+     * Poll fallback: check if the active call has ended server-side.
+     *
+     * Called periodically by Alpine when on a call, in case the
+     * DialerCallEnded Echo event was missed (WebSocket gap during re-render).
+     */
+    public function checkActiveCallStatus(): string
+    {
+        if (! $this->activeCallId) {
+            return 'idle';
+        }
+
+        $call = Call::find($this->activeCallId);
+
+        if (! $call) {
+            return 'ended';
+        }
+
+        if (in_array($call->status, ['completed', 'busy', 'no_answer', 'failed', 'canceled', 'declined', 'missed'])) {
+            // Call ended but Echo event was missed — update UI now
+            $this->callStatus = 'ended';
+            $this->showDisposition = true;
+            $this->agentStatus = 'available';
+            $this->clearCaches();
+
+            return 'ended';
+        }
+
+        return 'active';
+    }
+
     protected function resetPendingInbound(): void
     {
         $this->pendingInboundCallId = null;
@@ -1550,6 +1581,9 @@ class extends Component
         inboundCallerName: '',
         inboundCallerPhone: '',
 
+        // Fallback poll for call status (catches missed Echo events)
+        callStatusPollInterval: null,
+
         // Queue state
         queueItems: [],
         syncInterval: null,
@@ -1569,12 +1603,28 @@ class extends Component
         startTimer() {
             this.callTimer = 0;
             this.timerInterval = setInterval(() => { this.callTimer++ }, 1000);
+
+            // Start fallback poll — catches contact hangup if Echo misses the event
+            if (this.callStatusPollInterval) clearInterval(this.callStatusPollInterval);
+            this.callStatusPollInterval = setInterval(async () => {
+                const status = await $wire.checkActiveCallStatus();
+                if (status === 'ended') {
+                    this.stopTimer();
+                    if (window.__dialerSession) {
+                        window.__dialerSession.onCallEnded();
+                    }
+                }
+            }, 5000);
         },
 
         stopTimer() {
             if (this.timerInterval) {
                 clearInterval(this.timerInterval);
                 this.timerInterval = null;
+            }
+            if (this.callStatusPollInterval) {
+                clearInterval(this.callStatusPollInterval);
+                this.callStatusPollInterval = null;
             }
         },
 
