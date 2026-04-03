@@ -767,33 +767,16 @@ class extends Component
         }
 
         $service = app(DialerOrchestrationService::class);
-        $target = $service->getNextDialTarget($session);
+        $call = $service->dialNext($session);
 
-        if (! $target) {
+        if (! $call) {
             return ['error' => 'queue_empty'];
         }
-
-        $contact = $target['contact'];
-        $fromNumber = $target['fromNumber'];
-        $cc = $target['campaignContact'];
-
-        // Record the attempt (creates Call record, updates counters)
-        $call = $service->recordDialAttempt($session, $contact, $cc, $fromNumber);
 
         // Set UI state
         $this->setActiveCallFromCall($call->load('contact'));
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
-
-        // Actually dial the contact into the conference
-        try {
-            $service->dialContactIntoConference($session, $contact, $fromNumber, $call);
-        } catch (\Exception $e) {
-            $call->markFailed();
-
-            return ['error' => 'Failed to dial: '.$e->getMessage()];
-        }
-
         $this->clearCaches();
 
         return [
