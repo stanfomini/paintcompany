@@ -1362,7 +1362,7 @@ class extends Component
 
             // Load DialerSession module and wire events
             const DialerSessionClass = await window.loadDialerSession();
-            this.dialerSession = new DialerSessionClass(phone, $wire);
+            this.dialerSession = new DialerSessionClass(phone, () => $wire);
 
             this.dialerSession.on('state-change', (state) => {
                 this.sessionState = state;

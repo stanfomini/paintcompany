@@ -16,9 +16,11 @@
  *   session.on('state-change', (state) => { ... });
  */
 export default class DialerSession {
-    constructor(softphone, wire) {
+    constructor(softphone, getWire) {
         this._softphone = softphone;
-        this._wire = wire;
+        // Store a getter function instead of the $wire proxy directly
+        // Livewire's $wire proxy can't be stored as a plain property
+        this._getWire = typeof getWire === 'function' ? getWire : () => getWire;
         this._state = 'idle'; // idle, starting, ready, dialing, on_call, disposition
         this._autoDial = false;
         this._listeners = {};
@@ -26,6 +28,10 @@ export default class DialerSession {
         this._currentContactId = null;
         this._sessionId = null;
         this._conferenceName = null;
+    }
+
+    get _wire() {
+        return this._getWire();
     }
 
     // ── Event Emitter ──
