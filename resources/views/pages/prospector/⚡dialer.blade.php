@@ -1457,8 +1457,8 @@ class extends Component
             // Load initial queue
             this.loadQueue();
 
-            // Background sync every 30 seconds
-            this.syncInterval = setInterval(() => { this.loadQueue(); }, 30000);
+            // Background sync every 10 seconds (catches cooldown expiry)
+            this.syncInterval = setInterval(() => { this.loadQueue(); }, 10000);
 
             // Re-fetch queue when server-side filters change
             $watch('$wire.selectedCampaignId', () => { this.loadQueue(); });
@@ -1483,7 +1483,8 @@ class extends Component
                             });
                         }
 
-                        this.loadQueue();
+                        // Delay queue reload slightly so server-side priority flag commits
+                        setTimeout(() => { this.loadQueue(); }, 300);
                         $wire.onInboundCallRinging(e);
                     })
                     .listen('.dialer.call.connected', (e) => {
@@ -1516,6 +1517,8 @@ class extends Component
                         Echo.private('prospector.company.' + cid)
                             .listen('.sms.received', (e) => {
                                 $wire.onSmsReceived(e);
+                                // SMS may set priority flag — reload queue after server commits
+                                setTimeout(() => { this.loadQueue(); }, 300);
                             })
                             .listen('.lead.arrived', (e) => {
                                 try {
@@ -2127,7 +2130,7 @@ class extends Component
                                         @else
                                             <button
                                                 type="button"
-                                                x-on:click="$wire.submitDisposition('{{ $key }}').then(() => { if (dialerSession) dialerSession.onDispositioned(); })"
+                                                x-on:click="$wire.submitDisposition('{{ $key }}').then(() => { if (window.__dialerSession) window.__dialerSession.onDispositioned(); })"
                                                 class="rounded-lg border px-3 py-2 text-left text-sm font-medium transition {{ $dispColor }}"
                                             >{{ $label }}</button>
                                         @endif
@@ -2144,7 +2147,7 @@ class extends Component
                                             class="flex-1 rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-zinc-700 dark:text-zinc-100"
                                         />
                                         <flux:button size="sm" variant="primary"
-                                            x-on:click="$wire.submitDisposition('callback', callbackDate).then(() => { showCallbackPicker = false; if (dialerSession) dialerSession.onDispositioned(); })">
+                                            x-on:click="$wire.submitDisposition('callback', callbackDate).then(() => { showCallbackPicker = false; if (window.__dialerSession) window.__dialerSession.onDispositioned(); })">
                                             Schedule
                                         </flux:button>
                                     </div>

@@ -96,6 +96,12 @@ class ProspectorWebhookController extends Controller
                         'status' => 'queued',
                         'claimed_by_agent_id' => null,
                     ]);
+
+                    broadcast(new \App\Events\Prospector\QueueUpdated(
+                        companyId: $call->company_id,
+                        action: 'released',
+                        contactId: $call->contact_id,
+                    ));
                 }
             }
 

@@ -4,6 +4,7 @@ namespace App\Services\Prospector;
 
 use App\Events\Prospector\ContactDispositioned;
 use App\Events\Prospector\DialerCallEnded;
+use App\Events\Prospector\QueueUpdated;
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\Campaign;
@@ -391,13 +392,19 @@ class DialerOrchestrationService
         // Advance to next campaign if this one is exhausted
         $this->maybeAdvanceCampaign($call->campaign, $call->contact);
 
-        // Broadcast
+        // Broadcast disposition + queue update for all agents
         broadcast(new ContactDispositioned(
             companyId: $call->company_id,
             contact: $call->contact,
             disposition: $disposition,
             agentName: $call->agent->user->name ?? 'Unknown',
             campaignName: $call->campaign?->name,
+        ));
+
+        broadcast(new QueueUpdated(
+            companyId: $call->company_id,
+            action: 'dispositioned',
+            contactId: $call->contact_id,
         ));
 
         Log::info('DialerOrchestration: call dispositioned', [
