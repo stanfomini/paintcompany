@@ -2163,16 +2163,16 @@ class extends Component
                                     <flux:icon name="phone-arrow-down-left" class="size-10 animate-bounce text-green-600 dark:text-green-400" />
                                 </div>
                                 <div class="mt-3">
-                                    <flux:badge color="green" size="lg">INBOUND CALL</flux:badge>
+                                    <span class="inline-flex items-center rounded-full bg-green-100 px-4 py-1.5 text-sm font-bold text-green-800 dark:bg-green-900/40 dark:text-green-300">INBOUND CALL</span>
                                 </div>
                                 <div class="mt-3 text-xl font-bold text-zinc-900 dark:text-zinc-100">{{ $activeContact['name'] ?? 'Unknown Caller' }}</div>
                                 <div class="font-mono text-base text-zinc-500">{{ $callingFrom ?? $activeContact['phone'] ?? '' }}</div>
 
                                 <div class="mt-6 flex justify-center gap-3">
-                                    <flux:button size="lg" variant="primary" icon="phone" x-on:click="answerInbound()" class="bg-green-600 hover:bg-green-700 px-8">
+                                    <flux:button variant="primary" icon="phone" x-on:click="answerInbound()" class="bg-green-600 hover:bg-green-700 !px-8 !py-3 !text-base">
                                         Answer Call
                                     </flux:button>
-                                    <flux:button size="lg" variant="danger" icon="phone-x-mark" x-on:click="declineInbound()">
+                                    <flux:button variant="danger" icon="phone-x-mark" x-on:click="declineInbound()" class="!px-6 !py-3 !text-base">
                                         Decline
                                     </flux:button>
                                 </div>
