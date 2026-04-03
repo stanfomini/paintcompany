@@ -1239,9 +1239,10 @@ class extends Component
     }
 }; ?>
 
-{{-- SoftphoneManager instance stored outside Alpine to avoid Proxy conflicts --}}
+{{-- SoftphoneManager + DialerSession stored outside Alpine to avoid Proxy conflicts --}}
 <script>
     window.__softphone = null;
+    window.__dialerSession = null;
 </script>
 
 <div
@@ -1260,7 +1261,6 @@ class extends Component
         sessionState: 'idle', // idle, starting, ready, dialing, on_call, disposition
         sessionError: null,
         autoDial: false,
-        dialerSession: null,
 
         // UI state
         showDtmf: false,
@@ -1362,27 +1362,27 @@ class extends Component
 
             // Load DialerSession module and wire events
             const DialerSessionClass = await window.loadDialerSession();
-            this.dialerSession = new DialerSessionClass(phone, () => $wire);
+            window.__dialerSession = new DialerSessionClass(phone, $wire);
 
-            this.dialerSession.on('state-change', (state) => {
+            window.__dialerSession.on('state-change', (state) => {
                 this.sessionState = state;
             });
 
-            this.dialerSession.on('error', (msg) => {
+            window.__dialerSession.on('error', (msg) => {
                 this.sessionError = msg;
                 setTimeout(() => { this.sessionError = null; }, 10000);
             });
 
-            this.dialerSession.on('queue-empty', () => {
+            window.__dialerSession.on('queue-empty', () => {
                 this.sessionError = 'Queue is empty — no more contacts to call';
                 this.autoDial = false;
             });
 
-            this.dialerSession.on('session-started', () => {
+            window.__dialerSession.on('session-started', () => {
                 this.loadQueue();
             });
 
-            this.dialerSession.on('session-ended', () => {
+            window.__dialerSession.on('session-ended', () => {
                 this.stopTimer();
             });
         },
@@ -1392,24 +1392,24 @@ class extends Component
                 this.sessionError = 'Select a campaign first';
                 return;
             }
-            await this.dialerSession.start($wire.selectedCampaignId);
+            await window.__dialerSession.start($wire.selectedCampaignId);
             this.autoDial = true;
-            this.dialerSession.startAutoDial();
+            window.__dialerSession.startAutoDial();
         },
 
         pauseSession() {
             this.autoDial = false;
-            this.dialerSession.pause();
+            window.__dialerSession.pause();
         },
 
         resumeSession() {
             this.autoDial = true;
-            this.dialerSession.resume();
+            window.__dialerSession.resume();
         },
 
         async stopSession() {
             this.autoDial = false;
-            await this.dialerSession.stop();
+            await window.__dialerSession.stop();
         },
 
         answerInbound() {
@@ -1489,19 +1489,19 @@ class extends Component
                     .listen('.dialer.call.connected', (e) => {
                         $wire.onCallConnected(e);
                         this.startTimer();
-                        if (this.dialerSession) {
-                            this.dialerSession.onCallConnected(e.contact?.id);
+                        if (window.__dialerSession) {
+                            window.__dialerSession.onCallConnected(e.contact?.id);
                         }
                     })
                     .listen('.dialer.call.ended', (e) => {
                         this.stopTimer();
                         this.hangUp();
                         $wire.onCallEnded(e);
-                        if (this.dialerSession) {
+                        if (window.__dialerSession) {
                             if (e.disposition === 'no_answer' || e.disposition === 'busy') {
-                                this.dialerSession.onNoAnswer();
+                                window.__dialerSession.onNoAnswer();
                             } else {
-                                this.dialerSession.onCallEnded();
+                                window.__dialerSession.onCallEnded();
                             }
                         }
                     })
