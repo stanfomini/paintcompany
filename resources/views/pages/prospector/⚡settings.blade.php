@@ -44,6 +44,11 @@ class extends Component
     public ?int $deletingId = null;
     public string $deletingName = '';
 
+    // Credential status (for edit modal indicators)
+    public bool $hasApiKeySid = false;
+    public bool $hasApiKeySecret = false;
+    public bool $hasTwimlAppSid = false;
+
     // A2P Compliance
     public bool $showCreateServiceModal = false;
     public string $serviceName = '';
@@ -247,6 +252,9 @@ class extends Component
         $this->apiKeySid = '';
         $this->apiKeySecret = '';
         $this->twimlAppSid = '';
+        $this->hasApiKeySid = ! empty($account->api_key_sid);
+        $this->hasApiKeySecret = ! empty($account->api_key_secret);
+        $this->hasTwimlAppSid = ! empty($account->twiml_app_sid);
         $this->showModal = true;
     }
 
@@ -384,6 +392,17 @@ class extends Component
         $this->testingAccountId = null;
     }
 
+    public function setPrimary(int $id): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        TwilioAccount::where('is_primary', true)->update(['is_primary' => false]);
+        TwilioAccount::where('id', $id)->update(['is_primary' => true]);
+        unset($this->accounts);
+    }
+
     public function toggleActive(int $id): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -443,6 +462,9 @@ class extends Component
         $this->apiKeySid = '';
         $this->apiKeySecret = '';
         $this->twimlAppSid = '';
+        $this->hasApiKeySid = false;
+        $this->hasApiKeySecret = false;
+        $this->hasTwimlAppSid = false;
     }
 }; ?>
 
@@ -636,6 +658,25 @@ class extends Component
                                         </span>
                                     @endif
                                 </div>
+
+                                {{-- Voice SDK credential status --}}
+                                <div class="mt-1 flex items-center gap-3 text-xs">
+                                    @if ($account->api_key_sid && $account->api_key_secret && $account->twiml_app_sid)
+                                        <span class="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                            <flux:icon name="check-circle" variant="micro" />
+                                            {{ __('Voice SDK Ready') }}
+                                        </span>
+                                    @else
+                                        <span class="flex items-center gap-1 text-red-500 dark:text-red-400">
+                                            <flux:icon name="x-circle" variant="micro" />
+                                            {{ __('Voice SDK:') }}
+                                            @if (! $account->api_key_sid) {{ __('API Key') }} @endif
+                                            @if (! $account->api_key_secret) {{ __('Secret') }} @endif
+                                            @if (! $account->twiml_app_sid) {{ __('TwiML App') }} @endif
+                                            {{ __('missing') }}
+                                        </span>
+                                    @endif
+                                </div>
                             </div>
                         </div>
 
@@ -665,6 +706,12 @@ class extends Component
                                 <span wire:loading.remove wire:target="syncNumbers({{ $account->id }})">{{ __('Sync') }}</span>
                                 <span wire:loading wire:target="syncNumbers({{ $account->id }})">{{ __('Syncing...') }}</span>
                             </flux:button>
+
+                            @if (! $account->is_primary)
+                                <flux:button size="sm" variant="ghost" icon="star" wire:click="setPrimary({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Set as Primary') }}">
+                                    {{ __('Primary') }}
+                                </flux:button>
+                            @endif
 
                             <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Edit') }}" />
                             <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Delete') }}" />
@@ -929,6 +976,15 @@ class extends Component
                             :label="__('API Key SID')"
                             :placeholder="$editingId ? __('Leave blank to keep current') : __('SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
                         />
+                        @if ($editingId && $hasApiKeySid)
+                            <div class="mt-1 flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                                <flux:icon name="check-circle" variant="micro" /> {{ __('Currently configured') }}
+                            </div>
+                        @elseif ($editingId)
+                            <div class="mt-1 flex items-center gap-1 text-xs text-red-500 dark:text-red-400">
+                                <flux:icon name="x-circle" variant="micro" /> {{ __('Not configured — required for softphone') }}
+                            </div>
+                        @endif
                     </div>
                     <div>
                         <div class="mb-1.5 rounded bg-blue-50 px-2 py-1.5 text-[11px] text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
@@ -940,6 +996,15 @@ class extends Component
                             :label="__('API Key Secret')"
                             :placeholder="$editingId ? __('Leave blank to keep current') : __('Your API key secret')"
                         />
+                        @if ($editingId && $hasApiKeySecret)
+                            <div class="mt-1 flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                                <flux:icon name="check-circle" variant="micro" /> {{ __('Currently configured') }}
+                            </div>
+                        @elseif ($editingId)
+                            <div class="mt-1 flex items-center gap-1 text-xs text-red-500 dark:text-red-400">
+                                <flux:icon name="x-circle" variant="micro" /> {{ __('Not configured — required for softphone') }}
+                            </div>
+                        @endif
                     </div>
                     <div>
                         <div class="mb-1.5 rounded bg-blue-50 px-2 py-1.5 text-[11px] text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
@@ -950,6 +1015,15 @@ class extends Component
                             :label="__('TwiML App SID')"
                             :placeholder="$editingId ? __('Leave blank to keep current') : __('APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
                         />
+                        @if ($editingId && $hasTwimlAppSid)
+                            <div class="mt-1 flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                                <flux:icon name="check-circle" variant="micro" /> {{ __('Currently configured') }}
+                            </div>
+                        @elseif ($editingId)
+                            <div class="mt-1 flex items-center gap-1 text-xs text-red-500 dark:text-red-400">
+                                <flux:icon name="x-circle" variant="micro" /> {{ __('Not configured — required for softphone') }}
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>

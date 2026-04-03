@@ -49,8 +49,31 @@ class ConferenceService
             );
         }
 
+        // Validate credential formats — catches wrong-field entry or broken decryption
+        $accountSid = $twilioAccount->account_sid;
+        if (! str_starts_with($accountSid, 'AC')) {
+            Log::error('Twilio credential format error: account_sid does not start with "AC"', [
+                'account_name' => $twilioAccount->name,
+                'account_sid_prefix' => substr($accountSid, 0, 4),
+                'hint' => 'Check if Account SID and API Key SID were entered in the wrong fields, or if APP_KEY changed since credentials were saved.',
+            ]);
+            throw new RuntimeException(
+                'Account SID format invalid (expected AC..., got '.substr($accountSid, 0, 4).'...). Credentials may be in the wrong fields — Account SID should start with AC, API Key SID should start with SK.'
+            );
+        }
+
+        if (! str_starts_with($apiKeySid, 'SK')) {
+            Log::error('Twilio credential format error: api_key_sid does not start with "SK"', [
+                'account_name' => $twilioAccount->name,
+                'api_key_sid_prefix' => substr($apiKeySid, 0, 4),
+            ]);
+            throw new RuntimeException(
+                'API Key SID format invalid (expected SK..., got '.substr($apiKeySid, 0, 4).'...). API Key SID should start with SK, not AC.'
+            );
+        }
+
         $token = new AccessToken(
-            $twilioAccount->account_sid,
+            $accountSid,
             $apiKeySid,
             $apiKeySecret,
             3600,
@@ -71,6 +94,13 @@ class ConferenceService
             'agent_id' => $agent->id,
             'user_id' => $agent->user_id,
             'company_id' => $agent->company_id,
+            'twilio_account_id' => $twilioAccount->id,
+            'twilio_account_name' => $twilioAccount->name,
+            'account_sid_prefix' => substr($twilioAccount->account_sid, 0, 6).'...',
+            'api_key_sid_prefix' => substr($apiKeySid, 0, 6).'...',
+            'api_key_secret_set' => ! empty($apiKeySecret),
+            'twiml_app_sid_prefix' => $twimlAppSid ? substr($twimlAppSid, 0, 6).'...' : 'NOT SET',
+            'credential_source' => $twilioAccount->api_key_sid ? 'database' : 'config',
         ]);
 
         return $token->toJWT();

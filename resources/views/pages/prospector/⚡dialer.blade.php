@@ -594,6 +594,10 @@ class extends Component
         return $this->dialContact($contact->id);
     }
 
+    /**
+     * Step 1: Create Call record and return conference name.
+     * Does NOT dial the contact yet — agent must join the conference first.
+     */
     public function dialContact(int $contactId): array
     {
         if (! $this->agent) {
@@ -622,7 +626,7 @@ class extends Component
 
         $conferenceName = 'call-'.\Illuminate\Support\Str::ulid();
 
-        // Create Call record
+        // Create Call record (contact not dialed yet — agent joins first)
         $call = Call::create([
             'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
             'company_id' => $company->id,
@@ -632,14 +636,13 @@ class extends Component
             'from_number' => $fromNumber->getEffectiveCallerId(),
             'to_number' => $contact->phone,
             'direction' => 'outbound',
-            'status' => 'ringing',
+            'status' => 'initiating',
             'started_at' => now(),
             'twilio_conference_sid' => $conferenceName,
         ]);
 
         // Set active call state
         $this->setActiveCallFromCall($call->load('contact'));
-        $this->agentStatus = 'ringing';
         $this->showDisposition = false;
         $this->clearCaches();
 
@@ -648,7 +651,45 @@ class extends Component
             'contactId' => $contact->id,
             'companyId' => $company->id,
             'conferenceName' => $conferenceName,
+            'callId' => $call->id,
         ];
+    }
+
+    /**
+     * Step 2: Dial the contact into the conference AFTER the agent has joined.
+     * Called from JavaScript once the agent's WebRTC connection is established.
+     */
+    public function dialContactIntoConference(int $callId): array
+    {
+        $call = Call::with(['contact.company.twilioAccount', 'fromPhoneNumber.twilioAccount'])->find($callId);
+
+        if (! $call) {
+            return ['error' => 'Call not found'];
+        }
+
+        $conferenceName = $call->twilio_conference_sid;
+
+        if (! $conferenceName || ! $call->contact || ! $call->fromPhoneNumber) {
+            return ['error' => 'Missing call configuration'];
+        }
+
+        try {
+            $conferenceService = app(ConferenceService::class);
+            $callSid = $conferenceService->dialContactIntoConference(
+                $conferenceName,
+                $call->contact,
+                $call->fromPhoneNumber,
+            );
+            $call->update(['twilio_call_sid' => $callSid, 'status' => 'ringing']);
+            $this->callStatus = 'ringing';
+            $this->agentStatus = 'ringing';
+        } catch (\Exception $e) {
+            $call->update(['status' => 'failed']);
+
+            return ['error' => 'Failed to dial: '.$e->getMessage()];
+        }
+
+        return ['success' => true];
     }
 
     public function quickAddContact(string $firstName, string $phone): void
@@ -1307,6 +1348,7 @@ class extends Component
             switch (this.sessionState) {
                 case 'idle': return 'Select a campaign and press Start';
                 case 'starting': return 'Connecting...';
+                case 'joining': return 'Joining conference...';
                 case 'ready': return this.autoDial ? `Auto-dialing · ${this.queueItems.length} remaining` : 'Paused · Conference active';
                 case 'dialing': return 'Dialing...';
                 case 'on_call': return 'Connected · ' + this.formatTime(this.callTimer);
@@ -1360,15 +1402,21 @@ class extends Component
                 $wire.onCallEnded({});
             });
 
+            phone.on('unregistered', () => {
+                this.phoneReady = false;
+                this.phoneError = 'Phone disconnected — reconnecting...';
+            });
+
             phone.on('disconnected', () => {
                 this.stopTimer();
             });
 
-            // Sync Alpine state from the live softphone
+            // Sync Alpine state from the live softphone (survives Livewire re-renders)
             if (alreadyInitialized) {
                 this.phoneReady = phone.isReady;
                 this.phoneCompanyId = phone.companyId;
                 this.phoneState = phone.state;
+                this.phoneError = phone.isReady ? null : (this.phoneError || null);
             }
 
             // DialerSession: create once, re-wire handlers every render
@@ -1376,8 +1424,8 @@ class extends Component
                 const DialerSessionClass = await window.loadDialerSession();
                 window.__dialerSession = new DialerSessionClass(phone, $wire);
             } else {
-                // Update $wire reference for the current Livewire component
-                window.__dialerSession._wire = $wire;
+                // Update $wire getter for the current Livewire component
+                window.__dialerSession._getWire = () => $wire;
             }
 
             // Clear and re-wire DialerSession handlers
@@ -1413,6 +1461,11 @@ class extends Component
         },
 
         async startSession() {
+            if (!this.phoneReady) {
+                this.sessionError = 'Phone not connected — configure Twilio credentials in Settings';
+                setTimeout(() => { this.sessionError = null; }, 8000);
+                return;
+            }
             if (!$wire.selectedCampaignId) {
                 this.sessionError = 'Select a campaign first';
                 return;
@@ -1462,12 +1515,88 @@ class extends Component
             if (window.__softphone) window.__softphone.sendDtmf(digit);
         },
 
+        async directDial(contactId) {
+            if (!this.phoneReady) {
+                this.sessionError = 'Phone not connected — configure Twilio credentials in Settings';
+                setTimeout(() => { this.sessionError = null; }, 8000);
+                return;
+            }
+            try {
+                // Step 1: Create Call record, get conference name (contact NOT dialed yet)
+                const result = await $wire.dialContact(contactId);
+                if (result.error) {
+                    this.sessionError = result.error;
+                    setTimeout(() => { this.sessionError = null; }, 8000);
+                    return;
+                }
+
+                // Step 2: Connect AGENT to conference first via WebRTC
+                await window.__softphone.dial({ conference: result.conferenceName });
+
+                // Step 3: Wait for conference to initialize on Twilio
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                // Step 4: NOW dial the contact into the conference
+                const dialResult = await $wire.dialContactIntoConference(result.callId);
+                if (dialResult.error) {
+                    this.sessionError = dialResult.error;
+                    setTimeout(() => { this.sessionError = null; }, 8000);
+                }
+            } catch (err) {
+                this.sessionError = 'Call failed: ' + (err.message || err);
+                setTimeout(() => { this.sessionError = null; }, 8000);
+            }
+        },
+
+        async directManualDial() {
+            if (!this.phoneReady) {
+                this.sessionError = 'Phone not connected — configure Twilio credentials in Settings';
+                setTimeout(() => { this.sessionError = null; }, 8000);
+                return;
+            }
+            try {
+                // Step 1: Create Call record via manualDial (returns same structure as dialContact)
+                const result = await $wire.manualDial();
+                if (result.error) {
+                    this.sessionError = result.error;
+                    setTimeout(() => { this.sessionError = null; }, 8000);
+                    return;
+                }
+
+                // Step 2: Connect agent to conference first
+                await window.__softphone.dial({ conference: result.conferenceName });
+
+                // Step 3: Wait for conference to initialize
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                // Step 4: Dial the contact
+                const dialResult = await $wire.dialContactIntoConference(result.callId);
+                if (dialResult.error) {
+                    this.sessionError = dialResult.error;
+                    setTimeout(() => { this.sessionError = null; }, 8000);
+                }
+            } catch (err) {
+                this.sessionError = 'Call failed: ' + (err.message || err);
+                setTimeout(() => { this.sessionError = null; }, 8000);
+            }
+        },
+
         // Track subscribed company channel IDs for cleanup
         subscribedCompanyIds: [],
 
         init() {
             // Initialize SoftphoneManager + DialerSession
             this.initDialerSession();
+
+            // Clean up on page unload — end session and unregister device
+            window.addEventListener('beforeunload', () => {
+                if (window.__dialerSession?.isActive) {
+                    window.__dialerSession.stop();
+                }
+                if (window.__softphone) {
+                    window.__softphone.destroy();
+                }
+            });
 
             // Listen for Livewire dispatches
             this.$wire.on('queue-reload', () => {
@@ -1614,7 +1743,7 @@ class extends Component
                 </flux:select>
 
                 <template x-if="sessionState === 'idle'">
-                    <flux:button size="sm" variant="primary" icon="play" x-on:click="startSession()">
+                    <flux:button size="sm" variant="primary" icon="play" x-on:click="startSession()" :disabled="! phoneReady">
                         Start
                     </flux:button>
                 </template>
@@ -1731,7 +1860,7 @@ class extends Component
                             <div class="flex items-center justify-between">
                                 <flux:heading size="sm">Contact</flux:heading>
                                 @if ($callStatus === 'idle')
-                                    <flux:button size="xs" variant="primary" icon="phone" wire:click="dialContact({{ $cd->id }})">
+                                    <flux:button size="xs" variant="primary" icon="phone" x-on:click="directDial({{ $cd->id }})" :disabled="! phoneReady">
                                         Call
                                     </flux:button>
                                 @endif
@@ -1916,9 +2045,6 @@ class extends Component
                                 :class="phoneReady ? 'text-green-700 dark:text-green-400' : (phoneError ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400')"
                                 x-text="phoneReady ? 'Phone Ready' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
                             ></span>
-                            <template x-if="phoneError">
-                                <span class="text-xs text-red-500 dark:text-red-400" x-text="phoneError"></span>
-                            </template>
                         </div>
                         <div class="flex items-center gap-2">
                             @if ($callingFrom)
@@ -1932,6 +2058,22 @@ class extends Component
                             </template>
                         </div>
                     </div>
+
+                    {{-- Prominent error banner when phone has an error --}}
+                    <template x-if="phoneError">
+                        <div class="border-t border-red-200 bg-red-50 px-4 py-3 dark:border-red-800 dark:bg-red-900/20">
+                            <div class="flex items-start gap-3">
+                                <flux:icon name="exclamation-triangle" variant="mini" class="mt-0.5 shrink-0 text-red-500" />
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-medium text-red-800 dark:text-red-200" x-text="phoneError"></div>
+                                    <div class="mt-1 text-xs text-red-600 dark:text-red-400">
+                                        <a href="{{ route('prospector.settings') }}" class="font-medium underline hover:no-underline">Go to Prospector Settings &gt; Accounts</a>
+                                        to configure your Twilio API Key SID, API Key Secret, and TwiML App SID.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
                 </div>
 
                 {{-- Call Controls — always visible --}}
@@ -2126,7 +2268,7 @@ class extends Component
                                         placeholder="Enter phone number..."
                                         class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
                                     />
-                                    <flux:button size="sm" variant="primary" icon="phone" wire:click="manualDial">Dial</flux:button>
+                                    <flux:button size="sm" variant="primary" icon="phone" x-on:click="directManualDial()" :disabled="! phoneReady">Dial</flux:button>
                                 </div>
                             </div>
                         @endif

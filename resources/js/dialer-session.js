@@ -78,21 +78,49 @@ export default class DialerSession {
             this._sessionId = result.sessionId;
             this._conferenceName = result.conferenceName;
 
+            // Verify phone is ready before attempting to join conference
+            if (!this._softphone.isReady) {
+                this._emit('error', 'Phone not connected — cannot start session. Check Twilio credentials in Settings.');
+                await this._wire.endDialerSession();
+                this._setState('idle');
+                return;
+            }
+
             // Connect agent to the persistent conference via SoftphoneManager
+            // dial() now throws on failure so we catch it below
             await this._softphone.dial({ conference: this._conferenceName });
 
-            // Wait for the conference to be fully created on Twilio's side.
-            // Device.connect() resolves when the WebRTC signaling completes,
-            // but the TwiML processing (conference creation) takes 2-3 more seconds.
-            // Without this delay, dialNext() fires before the conference exists and
-            // the contact ends up in a separate conference.
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // Verify agent actually connected (not just that connect() resolved)
+            if (!this._softphone.hasActiveCall) {
+                this._emit('error', 'Failed to join conference — phone connection dropped');
+                await this._wire.endDialerSession();
+                this._setState('idle');
+                return;
+            }
+
+            // Wait for conference to be fully created on Twilio's side.
+            // Device.connect() resolves when WebRTC signaling completes,
+            // but TwiML processing (conference creation) takes 2-5 more seconds.
+            this._emit('state-change', 'joining', 'starting');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // Final check — agent still connected after wait?
+            if (!this._softphone.hasActiveCall) {
+                this._emit('error', 'Conference connection lost during setup. The TwiML App URL in Twilio Console may be misconfigured.');
+                await this._wire.endDialerSession();
+                this._setState('idle');
+                return;
+            }
 
             this._setState('ready');
             this._emit('session-started', { sessionId: this._sessionId, conferenceName: this._conferenceName });
 
         } catch (err) {
             this._emit('error', 'Failed to start session: ' + (err.message || err));
+            // Clean up server session if it was created
+            if (this._sessionId) {
+                try { await this._wire.endDialerSession(); } catch (_) {}
+            }
             this._setState('idle');
         }
     }
@@ -199,6 +227,13 @@ export default class DialerSession {
 
     async _dialNext() {
         if (this._state !== 'ready' || !this._autoDial) return;
+
+        // Don't dial if agent lost conference connection
+        if (!this._softphone.hasActiveCall) {
+            this._emit('error', 'Agent not connected to conference — stopping auto-dial');
+            this._autoDial = false;
+            return;
+        }
 
         this._setState('dialing');
 

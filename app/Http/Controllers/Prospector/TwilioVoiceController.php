@@ -125,6 +125,14 @@ class TwilioVoiceController extends Controller
         $to = $request->input('To', '');
         $conferenceName = $request->input('conference', '');
 
+        Log::debug('TwiML handleIncoming called', [
+            'conference' => $conferenceName ?: 'NONE',
+            'to' => $to ?: 'NONE',
+            'from' => $request->input('From', ''),
+            'call_sid' => $request->input('CallSid', ''),
+            'all_params' => array_keys($request->all()),
+        ]);
+
         // Conference join (outbound calls, transfers, supervisor, parallel dial)
         if ($conferenceName) {
             $response = new VoiceResponse;

@@ -237,6 +237,20 @@ class DialerOrchestrationService
 
         // Dial into persistent conference
         try {
+            // Verify account consistency — agent's token account must match phone number's account
+            $fromNumber->load('twilioAccount');
+            $agentAccount = $company->twilioAccount;
+            $phoneAccount = $fromNumber->twilioAccount;
+
+            if ($agentAccount && $phoneAccount && $agentAccount->account_sid !== $phoneAccount->account_sid) {
+                Log::warning('DialerOrchestration: ACCOUNT MISMATCH — agent token on different Twilio account than phone number', [
+                    'agent_account_sid' => $agentAccount->account_sid,
+                    'phone_account_sid' => $phoneAccount->account_sid,
+                    'conference' => $conferenceName,
+                    'from_number' => $fromNumber->phone_number,
+                ]);
+            }
+
             $amdParams = config('prospector.defaults.amd_enabled')
                 ? $this->amdService->getAmdParams()
                 : [];

@@ -135,18 +135,48 @@ export default class SoftphoneManager {
             this._emit('error', code + message);
         });
 
-        this._device.on('tokenWillExpire', async () => {
-            try {
-                const refreshUrl = this._companyId
-                    ? `/prospector/voice/token?company_id=${this._companyId}`
-                    : '/prospector/voice/token';
-                const res = await fetch(refreshUrl);
-                const refreshData = await res.json();
-                if (res.ok && refreshData.token) {
-                    this._device.updateToken(refreshData.token);
+        this._device.on('unregistered', () => {
+            this._deviceReady = false;
+            this._emit('unregistered');
+            // Auto re-register after 3 seconds
+            setTimeout(() => {
+                if (this._device && !this._deviceReady) {
+                    this._device.register().catch((err) => {
+                        this._emit('error', 'Re-registration failed: ' + (err.message || err));
+                    });
                 }
+            }, 3000);
+        });
+
+        this._device.on('tokenWillExpire', async () => {
+            const refreshUrl = this._companyId
+                ? `/prospector/voice/token?company_id=${this._companyId}`
+                : '/prospector/voice/token';
+
+            const delays = [0, 2000, 5000];
+            for (let attempt = 0; attempt < delays.length; attempt++) {
+                if (attempt > 0) {
+                    await new Promise(r => setTimeout(r, delays[attempt]));
+                }
+                try {
+                    const res = await fetch(refreshUrl);
+                    const data = await res.json();
+                    if (res.ok && data.token) {
+                        this._device.updateToken(data.token);
+                        return;
+                    }
+                } catch (err) {
+                    // Retry on next iteration
+                }
+            }
+            // All retries failed — try full re-init
+            this._emit('error', 'Token refresh failed after retries — reconnecting...');
+            this._deviceReady = false;
+            this._emit('unregistered');
+            try {
+                await this.init(this._companyId);
             } catch (err) {
-                this._emit('error', 'Token refresh failed');
+                this._emit('error', 'Reconnection failed: ' + (err.message || err));
             }
         });
 
@@ -215,13 +245,15 @@ export default class SoftphoneManager {
      */
     async dial(params) {
         if (!this._device || !this._deviceReady) {
-            this._emit('error', 'Phone not initialized — cannot dial');
-            return;
+            const msg = 'Phone not initialized — cannot dial';
+            this._emit('error', msg);
+            throw new Error(msg);
         }
 
         if (this._connection) {
-            this._emit('error', 'Already on a call');
-            return;
+            const msg = 'Already on a call';
+            this._emit('error', msg);
+            throw new Error(msg);
         }
 
         this._state = 'connecting';
@@ -244,6 +276,7 @@ export default class SoftphoneManager {
             this._state = 'idle';
             this._emit('state-change', 'idle');
             this._emit('error', 'Failed to connect: ' + (err.message || err));
+            throw err;
         }
     }
 
