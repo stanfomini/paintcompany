@@ -81,6 +81,13 @@ export default class DialerSession {
             // Connect agent to the persistent conference via SoftphoneManager
             await this._softphone.dial({ conference: this._conferenceName });
 
+            // Wait for the conference to be fully created on Twilio's side.
+            // Device.connect() resolves when the WebRTC signaling completes,
+            // but the TwiML processing (conference creation) takes 2-3 more seconds.
+            // Without this delay, dialNext() fires before the conference exists and
+            // the contact ends up in a separate conference.
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
             this._setState('ready');
             this._emit('session-started', { sessionId: this._sessionId, conferenceName: this._conferenceName });
 
