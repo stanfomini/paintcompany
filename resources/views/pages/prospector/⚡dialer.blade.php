@@ -602,22 +602,28 @@ class extends Component
      * Drop a voicemail on the active call — plays pre-recorded audio
      * on the contact's call leg, then ends the call.
      */
-    public function dropVoicemailOnCall(): void
+    public function dropVoicemailOnCall(): array
     {
         if (! $this->activeCallId || ! $this->agent) {
-            return;
+            return ['error' => 'No active call'];
         }
 
         $call = Call::with('contact.company.defaultRvmTemplate')->find($this->activeCallId);
 
         if (! $call || ! $call->twilio_call_sid) {
-            return;
+            return ['error' => 'No call to drop VM on'];
+        }
+
+        // The call must be answered (in-progress) before we can drop a VM.
+        // If the contact hasn't picked up yet, the TwiML redirect will fail.
+        if (! $call->answered_at && ! in_array($call->status, ['in-progress', 'connected'])) {
+            return ['error' => 'Wait for the voicemail machine to answer before dropping'];
         }
 
         $template = $call->contact?->company?->defaultRvmTemplate;
 
         if (! $template || ! $template->audio_path) {
-            return;
+            return ['error' => 'No VM template configured for this company'];
         }
 
         try {
@@ -632,13 +638,15 @@ class extends Component
                 'ended_at' => now(),
             ]);
         } catch (\Exception $e) {
-            // Contact may have already hung up
+            return ['error' => 'VM drop failed — contact may not have answered yet'];
         }
 
         $this->callStatus = 'ended';
         $this->showDisposition = true;
         $this->agentStatus = 'available';
         $this->clearCaches();
+
+        return ['success' => true];
     }
 
     // ──────────────────────────────────────
@@ -1995,7 +2003,12 @@ class extends Component
         },
 
         async dropVm() {
-            await $wire.dropVoicemailOnCall();
+            const result = await $wire.dropVoicemailOnCall();
+            if (result.error) {
+                this.sessionError = result.error;
+                setTimeout(() => { this.sessionError = null; }, 8000);
+                return; // Don't advance — the drop failed
+            }
             this.stopTimer();
             // In session mode, the DialerSession should advance
             if (window.__dialerSession?.isActive) {
