@@ -51,6 +51,9 @@ Route::middleware(['auth:web', 'auth.internal'])->group(function () {
     // Ringless Voicemail
     Route::livewire('/rvm', 'pages::prospector.rvm-manager')->name('rvm');
 
+    // Integrations
+    Route::livewire('/settings/integrations', 'pages::prospector.integration-settings')->name('settings.integrations');
+
     // Twilio Voice SDK token
     Route::get('/voice/token', [\App\Http\Controllers\Prospector\TwilioVoiceController::class, 'token'])->name('voice.token');
 });

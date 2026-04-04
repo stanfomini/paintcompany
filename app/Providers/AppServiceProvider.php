@@ -62,6 +62,9 @@ class AppServiceProvider extends ServiceProvider
             $model::observe(WorkflowModelObserver::class);
         }
 
+        // Prospector Model Bridge — register observers for bidirectional sync
+        $this->registerProspectorBridge();
+
         Event::listen(
             \Illuminate\Auth\Events\Login::class,
             \App\Listeners\NotifyOnCustomerLogin::class
@@ -109,6 +112,28 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('ai-workflow', function ($request) {
             return Limit::perMinute(10)->by($request->user()?->id ?: $request->ip());
         });
+    }
+
+    protected function registerProspectorBridge(): void
+    {
+        if (! config('prospector-bridge.enabled', false)) {
+            return;
+        }
+
+        // Host model → Prospector sync (import direction)
+        $companyModel = config('prospector-bridge.companies.model');
+        if ($companyModel && class_exists($companyModel)) {
+            $companyModel::observe(new \App\Observers\Prospector\HostModelObserver('companies'));
+        }
+
+        $contactModel = config('prospector-bridge.contacts.model');
+        if ($contactModel && class_exists($contactModel)) {
+            $contactModel::observe(new \App\Observers\Prospector\HostModelObserver('contacts'));
+        }
+
+        // Prospector → host model sync (export direction)
+        \App\Models\Prospector\Company::observe(new \App\Observers\Prospector\ProspectorSyncObserver('companies'));
+        \App\Models\Prospector\Contact::observe(new \App\Observers\Prospector\ProspectorSyncObserver('contacts'));
     }
 
     protected function configureDefaults(): void
