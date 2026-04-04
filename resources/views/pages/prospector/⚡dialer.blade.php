@@ -2301,14 +2301,18 @@ class extends Component
                          :class="{
                             'ring-2 ring-blue-500': $wire.previewContactId === item.id,
                             'border-green-400 bg-green-50 ring-2 ring-green-400 animate-pulse dark:border-green-600 dark:bg-green-900/30': item.is_priority && item.priority_reason === 'inbound_call',
-                            'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20': item.is_priority && item.priority_reason !== 'inbound_call',
+                            'border-purple-400 bg-purple-50 ring-2 ring-purple-400 dark:border-purple-600 dark:bg-purple-900/30': item.is_priority && item.priority_reason === 'voicemail',
+                            'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20': item.is_priority && item.priority_reason !== 'inbound_call' && item.priority_reason !== 'voicemail',
                             'border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800': !item.is_priority,
                          }">
                         <div class="mb-1 flex items-center gap-1.5">
                             <template x-if="item.is_priority && item.priority_reason === 'inbound_call'">
                                 <flux:icon name="phone-arrow-down-left" variant="micro" class="shrink-0 text-green-600 dark:text-green-400" />
                             </template>
-                            <template x-if="!(item.is_priority && item.priority_reason === 'inbound_call')">
+                            <template x-if="item.is_priority && item.priority_reason === 'voicemail'">
+                                <flux:icon name="inbox" variant="micro" class="shrink-0 text-purple-600 dark:text-purple-400" />
+                            </template>
+                            <template x-if="!(item.is_priority && (item.priority_reason === 'inbound_call' || item.priority_reason === 'voicemail'))">
                                 <span class="inline-block size-2 flex-shrink-0 rounded-full" :style="'background:' + (item.company_color || '#6b7280')"></span>
                             </template>
                             <span class="truncate font-medium text-zinc-900 dark:text-zinc-100" x-text="item.name"></span>
@@ -2317,7 +2321,10 @@ class extends Component
                         <template x-if="item.is_priority && item.priority_reason === 'inbound_call'">
                             <div class="mt-0.5 font-semibold text-green-700 dark:text-green-400">Inbound Call</div>
                         </template>
-                        <template x-if="!(item.is_priority && item.priority_reason === 'inbound_call')">
+                        <template x-if="item.is_priority && item.priority_reason === 'voicemail'">
+                            <div class="mt-0.5 font-semibold text-purple-700 dark:text-purple-400">Voicemail</div>
+                        </template>
+                        <template x-if="!(item.is_priority && (item.priority_reason === 'inbound_call' || item.priority_reason === 'voicemail'))">
                             <div class="mt-0.5 text-zinc-400" x-text="item.calls_today !== undefined ? ('Call ' + item.calls_today + '/' + (item.max_calls_today || '?') + ' · ' + (item.total_attempts || 0) + '/' + (item.max_total || '?')) : ''"></div>
                         </template>
                     </div>
@@ -2532,6 +2539,20 @@ class extends Component
                                             <div class="text-xs text-zinc-400">{{ $histCall->agent?->user?->name ?? 'Unknown' }}</div>
                                         </div>
                                         <div class="flex items-center gap-2">
+                                            @if ($histCall->recording_url)
+                                                <flux:button size="xs" variant="ghost" icon="play-circle" x-on:click="
+                                                    const el = $refs['audio_' + {{ $histCall->id }}];
+                                                    if (el) { el.paused ? el.play() : el.pause(); }
+                                                    else {
+                                                        const a = document.createElement('audio');
+                                                        a.src = '{{ $histCall->recording_url }}';
+                                                        a.controls = true;
+                                                        a.autoplay = true;
+                                                        a.className = 'h-6 w-32';
+                                                        $el.closest('.flex').appendChild(a);
+                                                    }
+                                                " title="Play voicemail" />
+                                            @endif
                                             @if ($histCall->duration_seconds)
                                                 <span class="font-mono text-xs text-zinc-500">{{ gmdate('i:s', $histCall->duration_seconds) }}</span>
                                             @endif
@@ -2539,12 +2560,19 @@ class extends Component
                                                 <flux:badge size="sm" color="{{ match($histCall->disposition) {
                                                     'interested' => 'green',
                                                     'callback' => 'blue',
+                                                    'voicemail' => 'purple',
                                                     'not_interested', 'wrong_number', 'dnc', 'disconnected' => 'red',
                                                     default => 'amber',
                                                 } }}">{{ str_replace('_', ' ', $histCall->disposition) }}</flux:badge>
                                             @endif
                                         </div>
                                     </div>
+                                    @if ($histCall->voicemail_transcription)
+                                        <div class="border-t border-zinc-100 px-4 py-2 dark:border-zinc-700/50">
+                                            <div class="text-[10px] font-medium text-purple-600 dark:text-purple-400">Voicemail Transcription</div>
+                                            <div class="text-xs text-zinc-600 dark:text-zinc-400">{{ $histCall->voicemail_transcription }}</div>
+                                        </div>
+                                    @endif
                                 @endforeach
                             </div>
                         </div>

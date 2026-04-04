@@ -51,6 +51,38 @@ class ProspectorWebhookController extends Controller
             return response('', 200);
         }
 
+        // Capture voicemail recording if present (from <Record> action callback)
+        $recordingUrl = $request->input('RecordingUrl');
+        $recordingSid = $request->input('RecordingSid');
+
+        if ($recordingUrl && $recordingSid) {
+            $call->update([
+                'recording_url' => $recordingUrl.'.mp3',
+                'recording_sid' => $recordingSid,
+                'disposition' => $call->disposition ?: 'voicemail',
+            ]);
+
+            // Priority-bump the contact in the queue so agents see voicemails first
+            $this->prioritizeVoicemailContact($call);
+
+            Log::info('Voicemail recording captured', [
+                'call_id' => $call->id,
+                'recording_sid' => $recordingSid,
+                'contact_id' => $call->contact_id,
+            ]);
+
+            // Broadcast voicemail notification to agents
+            if ($call->company_id) {
+                broadcast(new \App\Events\Prospector\QueueUpdated(
+                    companyId: $call->company_id,
+                    action: 'voicemail',
+                    contactId: $call->contact_id,
+                ));
+            }
+
+            return response('', 200);
+        }
+
         $statusMap = [
             'completed' => 'completed',
             'busy' => 'busy',
@@ -253,6 +285,32 @@ class ProspectorWebhookController extends Controller
      * Conference status events (start, end, participant-join, participant-leave).
      * Logged for debugging purposes.
      */
+
+    /**
+     * Prioritize a contact in the queue after they leave a voicemail.
+     */
+    private function prioritizeVoicemailContact(Call $call): void
+    {
+        if (! $call->contact_id) {
+            return;
+        }
+
+        $queueEntries = \App\Models\Prospector\CampaignContact::where('contact_id', $call->contact_id)
+            ->where('status', 'queued')
+            ->get();
+
+        foreach ($queueEntries as $entry) {
+            $entry->markPriority('voicemail');
+        }
+
+        // Update the contact's last disposition
+        \App\Models\Prospector\Contact::where('id', $call->contact_id)
+            ->update([
+                'last_disposition' => 'voicemail',
+                'has_unread_sms' => true, // Reuse this flag to indicate unread voicemail
+            ]);
+    }
+
     public function conferenceStatus(Request $request): Response
     {
         $conferenceName = $request->input('FriendlyName', '');

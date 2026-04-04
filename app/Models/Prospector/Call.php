@@ -37,6 +37,8 @@ class Call extends Model
         'talk_seconds',
         'recording_url',
         'recording_path',
+        'recording_sid',
+        'voicemail_transcription',
         'callback_at',
         'started_at',
         'answered_at',
