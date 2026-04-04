@@ -99,6 +99,17 @@ class extends Component
     public ?string $transferCallSid = null;
     public ?int $transferAgentId = null;
 
+    // Contact edit
+    public bool $showContactEditModal = false;
+    public string $editFirstName = '';
+    public string $editLastName = '';
+    public string $editPhone = '';
+    public string $editEmail = '';
+    public string $editAddress = '';
+    public string $editCity = '';
+    public string $editState = '';
+    public string $editZip = '';
+
     // Supervisor indicator
     public ?string $supervisorName = null;
     public ?string $supervisorMode = null; // listen, whisper, barge
@@ -456,6 +467,83 @@ class extends Component
 
         $this->newContactNote = '';
         $this->clearCaches();
+    }
+
+    // ──────────────────────────────────────
+    // Contact Edit
+    // ──────────────────────────────────────
+
+    public function openContactEdit(): void
+    {
+        $contactId = $this->activeContact['id'] ?? $this->previewContactId;
+
+        if (! $contactId) {
+            return;
+        }
+
+        $contact = Contact::find($contactId);
+
+        if (! $contact) {
+            return;
+        }
+
+        $this->editFirstName = $contact->first_name ?? '';
+        $this->editLastName = $contact->last_name ?? '';
+        $this->editPhone = $contact->phone ?? '';
+        $this->editEmail = $contact->email ?? '';
+        $this->editAddress = $contact->address ?? '';
+        $this->editCity = $contact->city ?? '';
+        $this->editState = $contact->state ?? '';
+        $this->editZip = $contact->zip ?? '';
+        $this->showContactEditModal = true;
+    }
+
+    public function saveContactEdit(): void
+    {
+        $contactId = $this->activeContact['id'] ?? $this->previewContactId;
+
+        if (! $contactId) {
+            return;
+        }
+
+        $this->validate([
+            'editFirstName' => ['required', 'string', 'max:100'],
+            'editPhone' => ['required', 'string', 'min:10'],
+        ]);
+
+        $contact = Contact::find($contactId);
+
+        if (! $contact) {
+            return;
+        }
+
+        $contact->update([
+            'first_name' => $this->editFirstName,
+            'last_name' => $this->editLastName ?: null,
+            'phone' => $this->editPhone,
+            'email' => $this->editEmail ?: null,
+            'address' => $this->editAddress ?: null,
+            'city' => $this->editCity ?: null,
+            'state' => $this->editState ?: null,
+            'zip' => $this->editZip ?: null,
+        ]);
+
+        // Update the active contact display data
+        if ($this->activeContact && $this->activeContact['id'] === $contactId) {
+            $this->activeContact['name'] = trim($this->editFirstName.' '.$this->editLastName);
+            $this->activeContact['phone'] = $contact->getDisplayPhone();
+            $this->activeContact['email'] = $this->editEmail ?: null;
+            $this->activeContact['city'] = $this->editCity ?: null;
+            $this->activeContact['state'] = $this->editState ?: null;
+        }
+
+        $this->showContactEditModal = false;
+        $this->clearCaches();
+    }
+
+    public function closeContactEdit(): void
+    {
+        $this->showContactEditModal = false;
     }
 
     // ──────────────────────────────────────
@@ -841,11 +929,30 @@ class extends Component
         try {
             $conferenceService = app(ConferenceService::class);
 
-            // End the contact's call directly via REST API.
-            // removeParticipant() only works if they've joined the conference;
-            // if they're still ringing, we need to kill the call itself.
-            $client = $conferenceService->getDefaultClient();
-            $client->calls($call->twilio_call_sid)->update(['status' => 'completed']);
+            // Use the phone number's Twilio account (may differ from default)
+            $call->loadMissing('fromPhoneNumber.twilioAccount');
+            $account = $call->fromPhoneNumber?->twilioAccount
+                ?? \App\Models\Prospector\TwilioAccount::where('is_active', true)->first();
+
+            if ($account) {
+                $client = $account->getClient();
+
+                // End the contact's call directly via REST API
+                try {
+                    $client->calls($call->twilio_call_sid)->update(['status' => 'completed']);
+                } catch (\Exception $e) {
+                    // Call may have already ended
+                }
+
+                // Also try removing from conference (belt and suspenders)
+                try {
+                    $client->conferences($call->twilio_conference_sid)
+                        ->participants($call->twilio_call_sid)
+                        ->update(['status' => 'completed']);
+                } catch (\Exception $e) {
+                    // Participant may have already left
+                }
+            }
         } catch (\Exception $e) {
             // Contact may have already left — that's fine
         }
@@ -2488,7 +2595,10 @@ class extends Component
                     <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
                         <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
                             <div class="flex items-center justify-between">
-                                <flux:heading size="sm">Contact</flux:heading>
+                                <div class="flex items-center gap-1.5">
+                                    <flux:heading size="sm">Contact</flux:heading>
+                                    <flux:button size="xs" variant="ghost" icon="pencil-square" wire:click="openContactEdit" title="Edit contact" />
+                                </div>
                                 @if ($callStatus === 'idle')
                                     <flux:button size="xs" variant="primary" icon="phone" x-on:click="directDial({{ $cd->id }})" x-bind:disabled="!phoneReady">
                                         Call
@@ -3322,4 +3432,38 @@ class extends Component
                 <flux:badge color="red" size="sm">On Call</flux:badge>
             @endif
         </div>
+
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+    {{-- CONTACT EDIT MODAL                                                --}}
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+    @if ($showContactEditModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" wire:click.self="closeContactEdit">
+            <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-800">
+                <div class="mb-4 flex items-center justify-between">
+                    <flux:heading size="lg">Edit Contact</flux:heading>
+                    <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="closeContactEdit" />
+                </div>
+
+                <form wire:submit="saveContactEdit" class="space-y-3">
+                    <div class="grid grid-cols-2 gap-3">
+                        <flux:input wire:model="editFirstName" label="First Name" required />
+                        <flux:input wire:model="editLastName" label="Last Name" />
+                    </div>
+                    <flux:input wire:model="editPhone" label="Phone" required />
+                    <flux:input wire:model="editEmail" label="Email" type="email" />
+                    <flux:input wire:model="editAddress" label="Address" />
+                    <div class="grid grid-cols-3 gap-3">
+                        <flux:input wire:model="editCity" label="City" />
+                        <flux:input wire:model="editState" label="State" />
+                        <flux:input wire:model="editZip" label="Zip" />
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-2">
+                        <flux:button variant="ghost" wire:click="closeContactEdit">Cancel</flux:button>
+                        <flux:button type="submit" variant="primary">Save</flux:button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>
