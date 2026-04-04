@@ -832,7 +832,12 @@ class extends Component
 
         try {
             $conferenceService = app(ConferenceService::class);
-            $conferenceService->removeParticipant($call->twilio_conference_sid, $call->twilio_call_sid);
+
+            // End the contact's call directly via REST API.
+            // removeParticipant() only works if they've joined the conference;
+            // if they're still ringing, we need to kill the call itself.
+            $client = $conferenceService->getDefaultClient();
+            $client->calls($call->twilio_call_sid)->update(['status' => 'completed']);
         } catch (\Exception $e) {
             // Contact may have already left — that's fine
         }
@@ -1919,13 +1924,13 @@ class extends Component
             }
         },
 
-        hangUp() {
+        async hangUp() {
             if (window.__dialerSession && window.__dialerSession.isActive) {
-                // In persistent conference: remove the CONTACT, keep agent connected
-                $wire.hangUpContact();
+                // In persistent conference: end the contact's call, keep agent connected
+                await $wire.hangUpContact();
             } else {
-                // Not in a session: end the contact's call + disconnect agent
-                $wire.hangUpContact();
+                // Not in a session: end the contact's call first, THEN disconnect agent
+                await $wire.hangUpContact();
                 if (window.__softphone) window.__softphone.hangup();
             }
         },
