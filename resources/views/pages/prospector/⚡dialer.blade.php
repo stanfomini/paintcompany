@@ -1712,7 +1712,7 @@ class extends Component
                 const status = await $wire.checkActiveCallStatus();
                 if (status === 'ended') {
                     this.stopTimer();
-                    if (window.__dialerSession) {
+                    if (window.__dialerSession?.isActive) {
                         window.__dialerSession.onCallEnded();
                     }
                 }
@@ -1998,7 +1998,7 @@ class extends Component
             await $wire.dropVoicemailOnCall();
             this.stopTimer();
             // In session mode, the DialerSession should advance
-            if (window.__dialerSession) {
+            if (window.__dialerSession?.isActive) {
                 window.__dialerSession.onCallEnded();
             }
         },
@@ -2177,7 +2177,7 @@ class extends Component
 
                         $wire.onCallConnected(e);
                         this.startTimer();
-                        if (window.__dialerSession) {
+                        if (window.__dialerSession?.isActive) {
                             window.__dialerSession.onCallConnected(e.contact?.id);
                         }
                     })
@@ -2191,7 +2191,7 @@ class extends Component
                         // already left. Calling hangUp() would disconnect the agent's
                         // WebRTC and break auto-dial.
                         $wire.onCallEnded(e);
-                        if (window.__dialerSession) {
+                        if (window.__dialerSession?.isActive) {
                             if (e.disposition === 'no_answer' || e.disposition === 'busy' || e.disposition === 'voicemail') {
                                 window.__dialerSession.onNoAnswer();
                             } else {
@@ -2994,7 +2994,7 @@ class extends Component
                                         @else
                                             <button
                                                 type="button"
-                                                x-on:click="$wire.submitDisposition('{{ $key }}').then(() => { if (window.__dialerSession) window.__dialerSession.onDispositioned(); })"
+                                                x-on:click="$wire.submitDisposition('{{ $key }}').then(() => { if (window.__dialerSession?.isActive) window.__dialerSession.onDispositioned(); })"
                                                 class="rounded-lg border px-3 py-2 text-left text-sm font-medium transition {{ $dispColor }}"
                                             >{{ $label }}</button>
                                         @endif
@@ -3011,7 +3011,7 @@ class extends Component
                                             class="flex-1 rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-zinc-700 dark:text-zinc-100"
                                         />
                                         <flux:button size="sm" variant="primary"
-                                            x-on:click="$wire.submitDisposition('callback', callbackDate).then(() => { showCallbackPicker = false; if (window.__dialerSession) window.__dialerSession.onDispositioned(); })">
+                                            x-on:click="$wire.submitDisposition('callback', callbackDate).then(() => { showCallbackPicker = false; if (window.__dialerSession?.isActive) window.__dialerSession.onDispositioned(); })">
                                             Schedule
                                         </flux:button>
                                     </div>
