@@ -798,6 +798,14 @@ class extends Component
             // Contact may have already left — that's fine
         }
 
+        // Mark the call as completed if still in-progress
+        if (in_array($call->status, ['ringing', 'in-progress', 'holding', 'initiating'])) {
+            $call->update([
+                'status' => 'completed',
+                'ended_at' => now(),
+            ]);
+        }
+
         $this->callStatus = 'ended';
         $this->showDisposition = true;
         $this->agentStatus = 'available';
@@ -1736,6 +1744,11 @@ class extends Component
 
             phone.on('disconnected', () => {
                 this.stopTimer();
+                // If not in a session and we were on a call, the call is over
+                // (e.g., caller hung up → conference ended → agent's WebRTC disconnected)
+                if (!window.__dialerSession?.isActive && $wire.callStatus === 'connected') {
+                    $wire.onCallEnded({});
+                }
             });
 
             // Sync Alpine state from the live softphone.
@@ -1869,7 +1882,8 @@ class extends Component
                 // In persistent conference: remove the CONTACT, keep agent connected
                 $wire.hangUpContact();
             } else {
-                // Not in a session: disconnect the agent's own call
+                // Not in a session: end the contact's call + disconnect agent
+                $wire.hangUpContact();
                 if (window.__softphone) window.__softphone.hangup();
             }
         },
