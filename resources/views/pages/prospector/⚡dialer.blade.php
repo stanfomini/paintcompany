@@ -309,11 +309,18 @@ class extends Component
     #[Computed]
     public function bookingLinks(): \Illuminate\Support\Collection
     {
-        if (! $this->agent) {
+        // Show booking links for the CONTACT's company, not the agent's default
+        $contactId = $this->activeContact['id'] ?? $this->previewContactId;
+        if (! $contactId) {
             return collect();
         }
 
-        return CompanyBookingLink::where('company_id', $this->agent->company_id)
+        $contact = Contact::find($contactId);
+        if (! $contact?->company_id) {
+            return collect();
+        }
+
+        return CompanyBookingLink::where('company_id', $contact->company_id)
             ->orderBy('sort_order')
             ->get();
     }
@@ -330,11 +337,18 @@ class extends Component
     #[Computed]
     public function rvmTemplates(): \Illuminate\Support\Collection
     {
-        if (! $this->agent) {
+        // Show RVM templates for the CONTACT's company, not the agent's default
+        $contactId = $this->activeContact['id'] ?? $this->previewContactId;
+        if (! $contactId) {
             return collect();
         }
 
-        return RvmTemplate::where('company_id', $this->agent->company_id)
+        $contact = Contact::find($contactId);
+        if (! $contact?->company_id) {
+            return collect();
+        }
+
+        return RvmTemplate::where('company_id', $contact->company_id)
             ->active()
             ->orderBy('name')
             ->get();
@@ -343,11 +357,18 @@ class extends Component
     #[Computed]
     public function activeScript(): ?CallScript
     {
-        if (! $this->agent) {
+        // Show script for the CONTACT's company, not the agent's default
+        $contactId = $this->activeContact['id'] ?? $this->previewContactId;
+        if (! $contactId) {
             return null;
         }
 
-        return CallScript::where('company_id', $this->agent->company_id)
+        $contact = Contact::find($contactId);
+        if (! $contact?->company_id) {
+            return null;
+        }
+
+        return CallScript::where('company_id', $contact->company_id)
             ->active()
             ->orderBy('sort_order')
             ->first();
