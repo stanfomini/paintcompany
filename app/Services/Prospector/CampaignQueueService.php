@@ -152,6 +152,43 @@ class CampaignQueueService
     }
 
     /**
+     * Get queue stats: total queued vs callable right now.
+     *
+     * "Callable" means passing ALL gates: daily limit, cooldown, DNC,
+     * exhaustion, and TCPA/timezone hours.
+     *
+     * @return array{total: int, callable: int}
+     */
+    public function getQueueStats(Campaign $campaign): array
+    {
+        $total = CampaignContact::where('campaign_id', $campaign->id)
+            ->where('status', 'queued')
+            ->count();
+
+        $candidates = CampaignContact::where('campaign_id', $campaign->id)
+            ->where('status', 'queued')
+            ->where('calls_today', '<', $campaign->max_calls_per_day)
+            ->where(function ($q) {
+                $q->whereNull('next_callable_at')
+                    ->orWhere('next_callable_at', '<=', now());
+            })
+            ->with('contact')
+            ->get();
+
+        $callable = $candidates->filter(function (CampaignContact $entry) use ($campaign) {
+            $contact = $entry->contact;
+
+            return $contact
+                && ! $contact->trashed()
+                && ! $contact->do_not_call
+                && ! $entry->isExhausted($campaign)
+                && $campaign->isContactCallable($contact);
+        })->count();
+
+        return ['total' => $total, 'callable' => $callable];
+    }
+
+    /**
      * Return the queue as a JSON-serializable array for Alpine.js.
      */
     public function getQueueAsArray(Campaign $campaign, $agent, int $limit = 50): array

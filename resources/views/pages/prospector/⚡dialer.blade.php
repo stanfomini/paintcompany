@@ -242,6 +242,24 @@ class extends Component
         return app(CampaignQueueService::class)->getQueueAsArray($campaign, $this->agent);
     }
 
+    /**
+     * Get queue stats: total queued contacts vs callable right now.
+     * Called by Alpine to update the real-time counter.
+     */
+    public function getQueueStats(): array
+    {
+        if (! $this->selectedCampaignId) {
+            return ['total' => 0, 'callable' => 0];
+        }
+
+        $campaign = Campaign::find($this->selectedCampaignId);
+        if (! $campaign) {
+            return ['total' => 0, 'callable' => 0];
+        }
+
+        return app(CampaignQueueService::class)->getQueueStats($campaign);
+    }
+
     #[Computed]
     public function dispositions(): array
     {
@@ -1631,13 +1649,16 @@ class extends Component
 
         // Queue state
         queueItems: [],
+        queueStats: { total: 0, callable: 0 },
         syncInterval: null,
 
         async loadQueue() {
             if ($wire.selectedCampaignId) {
                 this.queueItems = await $wire.syncCampaignQueue();
+                this.queueStats = await $wire.getQueueStats();
             } else {
                 this.queueItems = [];
+                this.queueStats = { total: 0, callable: 0 };
             }
         },
 
@@ -1684,7 +1705,7 @@ class extends Component
                 case 'idle': return 'Select a campaign and press Start';
                 case 'starting': return 'Connecting...';
                 case 'joining': return 'Joining conference...';
-                case 'ready': return this.autoDial ? `Auto-dialing · ${this.queueItems.length} remaining` : 'Paused · Conference active';
+                case 'ready': return this.autoDial ? `Auto-dialing · ${this.queueStats.callable} callable / ${this.queueStats.total} total` : 'Paused · Conference active';
                 case 'dialing': return 'Dialing...';
                 case 'on_call': return 'Connected · ' + this.formatTime(this.callTimer);
                 case 'disposition': return 'Disposition';
@@ -2229,6 +2250,21 @@ class extends Component
             </template>
 
     {{-- ════════════════════════════════════════════════════════════════════ --}}
+    {{-- QUEUE STATS BAR                                                   --}}
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+            <template x-if="$wire.selectedCampaignId && (queueStats.total > 0 || queueItems.length > 0)">
+                <div class="flex items-center gap-4 border-b border-zinc-200 px-4 py-1.5 dark:border-zinc-700">
+                    <div class="flex items-center gap-1.5 text-xs">
+                        <span class="font-medium text-zinc-500 dark:text-zinc-400">Total:</span>
+                        <span class="font-bold text-zinc-900 dark:text-zinc-100" x-text="queueStats.total">0</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-xs">
+                        <span class="font-medium text-zinc-500 dark:text-zinc-400">Callable Now:</span>
+                        <span class="font-bold" :class="queueStats.callable > 0 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'" x-text="queueStats.callable">0</span>
+                    </div>
+                </div>
+            </template>
+
     {{-- HORIZONTAL QUEUE CARDS (campaign-driven)                          --}}
     {{-- ════════════════════════════════════════════════════════════════════ --}}
             <div class="flex gap-2 overflow-x-auto border-b border-zinc-200 px-4 py-2 dark:border-zinc-700"
