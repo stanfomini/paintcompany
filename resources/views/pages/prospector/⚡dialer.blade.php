@@ -1006,6 +1006,7 @@ class extends Component
         $this->resetCallState();
         $this->clearCaches();
         $this->dispatch('queue-reload');
+        $this->dispatch('disposition-submitted');
     }
 
     // ──────────────────────────────────────
@@ -1682,6 +1683,15 @@ class extends Component
             if ($wire.selectedCampaignId) {
                 this.queueItems = await $wire.syncCampaignQueue();
                 this.queueStats = await $wire.getQueueStats();
+
+                // If queue was empty but now has contacts, clear the error and resume auto-dial
+                if (this.queueStats.callable > 0 && this.sessionError && this.sessionError.includes('Queue is empty')) {
+                    this.sessionError = null;
+                    if (window.__dialerSession?.isActive && this.autoDial && window.__softphone?.hasActiveCall) {
+                        window.__dialerSession._setState('ready');
+                        window.__dialerSession.startAutoDial();
+                    }
+                }
             } else {
                 this.queueItems = [];
                 this.queueStats = { total: 0, callable: 0 };
@@ -1766,6 +1776,11 @@ class extends Component
                 const errorStr = typeof msg === 'string' ? msg : (msg?.message || String(msg));
                 this.phoneError = errorStr;
                 this.sessionError = errorStr;
+                // Auto-clear phone errors after 10 seconds (token refresh, reconnection, etc.)
+                setTimeout(() => {
+                    if (this.phoneError === errorStr) this.phoneError = null;
+                    if (this.sessionError === errorStr) this.sessionError = null;
+                }, 10000);
             });
 
             phone.on('state-change', (state) => {
@@ -1844,7 +1859,8 @@ class extends Component
             });
 
             window.__dialerSession.on('queue-empty', () => {
-                this.sessionError = 'Queue is empty — no more contacts to call';
+                this.sessionError = 'Queue is empty — waiting for new contacts...';
+                // Don't auto-clear — but refresh queue periodically to detect new contacts
                 this.autoDial = false;
             });
 
@@ -2074,9 +2090,32 @@ class extends Component
                 }
             });
 
+            // Handle tab visibility changes — refresh token when returning to tab
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && window.__softphone) {
+                    // Returning to tab — re-check phone state and refresh token if needed
+                    if (!window.__softphone.isReady && !window.__softphone.hasActiveCall) {
+                        window.__softphone.init(window.__softphone.companyId).then(() => {
+                            this.phoneReady = window.__softphone.isReady;
+                            this.phoneError = null;
+                        }).catch(() => {});
+                    }
+                    this.phoneReady = window.__softphone.isReady;
+                    this.phoneCompanyId = window.__softphone.companyId;
+                    this.phoneState = window.__softphone.state;
+                }
+            });
+
             // Listen for Livewire dispatches
             this.$wire.on('queue-reload', () => {
                 this.loadQueue();
+            });
+
+            this.$wire.on('disposition-submitted', () => {
+                // Tell DialerSession the agent finished dispositioning — resume auto-dial
+                if (window.__dialerSession?.isActive) {
+                    window.__dialerSession.onDispositioned();
+                }
             });
 
             this.$wire.on('dial-error', ({ message }) => {
