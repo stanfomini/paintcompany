@@ -1791,9 +1791,23 @@ class extends Component
 
             phone.on('disconnected', () => {
                 this.stopTimer();
-                // If not in a session and we were on a call, the call is over
-                // (e.g., caller hung up → conference ended → agent's WebRTC disconnected)
-                if (!window.__dialerSession?.isActive && $wire.callStatus === 'connected') {
+
+                if (window.__dialerSession?.isActive) {
+                    // Agent was in a session but WebRTC dropped (e.g., inbound call's
+                    // hold conference ended). Reconnect to the session conference.
+                    setTimeout(async () => {
+                        if (window.__dialerSession?.isActive && !window.__softphone?.hasActiveCall) {
+                            try {
+                                await window.__softphone.dial({ conference: window.__dialerSession.conferenceName });
+                                this.sessionState = 'ready';
+                            } catch (err) {
+                                this.sessionError = 'Session reconnect failed: ' + (err.message || err);
+                                setTimeout(() => { this.sessionError = null; }, 8000);
+                            }
+                        }
+                    }, 2000);
+                } else if ($wire.callStatus === 'connected') {
+                    // Not in a session and we were on a call — the call is over
                     $wire.onCallEnded({});
                 }
             });
@@ -1889,10 +1903,17 @@ class extends Component
                 }
                 if (result.scenario === 'idle' && result.holdConference) {
                     // Scenario B: agent joins the hold conference via WebRTC
-                    // Safe — no existing WebRTC connection to disrupt
-                    await window.__softphone.dial({ conference: result.holdConference });
+                    // Only when agent has NO existing WebRTC connection
+                    if (!window.__softphone.hasActiveCall) {
+                        await window.__softphone.dial({ conference: result.holdConference });
+                    }
+                    // If agent IS on an active call (session), the server-side
+                    // acceptInboundCall should have redirected the caller to the
+                    // session conference. If it didn't, we track that we're in
+                    // a hold conference so we can reconnect to session after.
+                    this._inboundWasHoldConference = !window.__softphone.hasActiveCall ? false : true;
                 }
-                // Scenario A: server already redirected caller into session conference — audio just works
+                // Scenario A: server already redirected caller into session conference
                 this.inboundWaiting = false;
                 if (this.inboundWaitInterval) { clearInterval(this.inboundWaitInterval); this.inboundWaitInterval = null; }
                 this.startTimer();
@@ -1925,9 +1946,31 @@ class extends Component
         },
 
         async hangUp() {
+            const wasInbound = $wire.isInboundCall;
+
             if (window.__dialerSession && window.__dialerSession.isActive) {
                 // In persistent conference: end the contact's call, keep agent connected
                 await $wire.hangUpContact();
+
+                // If this was an inbound call and the agent's WebRTC dropped
+                // (because they joined the hold conference which died), reconnect
+                // to the session conference after a brief delay
+                if (wasInbound) {
+                    setTimeout(async () => {
+                        if (window.__dialerSession?.isActive && !window.__softphone?.hasActiveCall) {
+                            try {
+                                await window.__softphone.dial({ conference: window.__dialerSession.conferenceName });
+                                this.sessionState = 'ready';
+                                if (this.autoDial) {
+                                    window.__dialerSession.resume();
+                                }
+                            } catch (err) {
+                                this.sessionError = 'Failed to reconnect to session: ' + (err.message || err);
+                                setTimeout(() => { this.sessionError = null; }, 8000);
+                            }
+                        }
+                    }, 2000);
+                }
             } else {
                 // Not in a session: end the contact's call first, THEN disconnect agent
                 await $wire.hangUpContact();
