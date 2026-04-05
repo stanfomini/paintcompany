@@ -39,14 +39,22 @@ class AgentStateService
 
         $previousStatus = $agent->status;
 
-        // Update DB (source of truth)
-        $agent->update([
-            'status' => $status,
-            'status_changed_at' => now(),
-        ]);
+        // Update ALL agent records for this user (one per company)
+        // so status is consistent across the dashboard
+        $allAgents = Agent::where('user_id', $agent->user_id)->get();
 
-        // Update Redis (fast read path)
-        $this->setRedisStatus($agent, $status);
+        foreach ($allAgents as $agentRecord) {
+            $agentRecord->update([
+                'status' => $status,
+                'status_changed_at' => now(),
+            ]);
+
+            // Update Redis (fast read path)
+            $this->setRedisStatus($agentRecord, $status);
+        }
+
+        // Refresh the passed agent instance
+        $agent->refresh();
 
         Log::info('Agent status changed', [
             'agent_id' => $agent->id,
