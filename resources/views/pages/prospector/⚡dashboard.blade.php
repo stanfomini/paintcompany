@@ -84,6 +84,49 @@ class extends Component
     }
 
     #[Computed]
+    public function bookingStats(): array
+    {
+        $bookedDispositions = ['booked', 'interested', 'appointment_set'];
+
+        // Today
+        $todayCalls = Call::today()->where('direction', 'outbound');
+        $todayTotal = (clone $todayCalls)->whereNotNull('answered_at')->count();
+        $todayBooked = (clone $todayCalls)->whereIn('disposition', $bookedDispositions)->count();
+        $todayRate = $todayTotal > 0 ? round(($todayBooked / $todayTotal) * 100, 1) : 0;
+
+        // This week
+        $weekCalls = Call::where('direction', 'outbound')->where('started_at', '>=', now()->startOfWeek());
+        $weekTotal = (clone $weekCalls)->whereNotNull('answered_at')->count();
+        $weekBooked = (clone $weekCalls)->whereIn('disposition', $bookedDispositions)->count();
+        $weekRate = $weekTotal > 0 ? round(($weekBooked / $weekTotal) * 100, 1) : 0;
+
+        // This month
+        $monthCalls = Call::where('direction', 'outbound')->where('started_at', '>=', now()->startOfMonth());
+        $monthTotal = (clone $monthCalls)->whereNotNull('answered_at')->count();
+        $monthBooked = (clone $monthCalls)->whereIn('disposition', $bookedDispositions)->count();
+        $monthRate = $monthTotal > 0 ? round(($monthBooked / $monthTotal) * 100, 1) : 0;
+
+        return [
+            'today' => ['booked' => $todayBooked, 'connected' => $todayTotal, 'rate' => $todayRate],
+            'week' => ['booked' => $weekBooked, 'connected' => $weekTotal, 'rate' => $weekRate],
+            'month' => ['booked' => $monthBooked, 'connected' => $monthTotal, 'rate' => $monthRate],
+        ];
+    }
+
+    #[Computed]
+    public function dispositionBreakdown(): array
+    {
+        return Call::today()
+            ->where('direction', 'outbound')
+            ->whereNotNull('disposition')
+            ->selectRaw('disposition, count(*) as total')
+            ->groupBy('disposition')
+            ->orderByDesc('total')
+            ->pluck('total', 'disposition')
+            ->toArray();
+    }
+
+    #[Computed]
     public function operationalStats(): array
     {
         return [
@@ -110,9 +153,10 @@ class extends Component
     public function recentCalls(): \Illuminate\Support\Collection
     {
         return Call::query()
+            ->where('started_at', '>=', now()->subHour())
             ->with(['agent.user', 'contact', 'campaign'])
             ->orderByDesc('started_at')
-            ->limit(20)
+            ->limit(30)
             ->get();
     }
 
@@ -130,11 +174,31 @@ class extends Component
     #[Computed]
     public function agentPerformance(): \Illuminate\Support\Collection
     {
+        $bookedDispositions = ['booked', 'interested', 'appointment_set'];
+
         return Agent::query()
-            ->online()
             ->with('user')
-            ->orderByDesc('daily_call_count')
-            ->get();
+            ->whereIn('status', ['available', 'on_call', 'ringing', 'wrap_up', 'break'])
+            ->get()
+            ->map(function (Agent $agent) use ($bookedDispositions) {
+                $todayCalls = Call::where('agent_id', $agent->id)
+                    ->where('direction', 'outbound')
+                    ->whereDate('started_at', today());
+
+                $totalCalls = (clone $todayCalls)->count();
+                $connected = (clone $todayCalls)->whereNotNull('answered_at')->count();
+                $booked = (clone $todayCalls)->whereIn('disposition', $bookedDispositions)->count();
+                $talkSeconds = (clone $todayCalls)->sum('talk_seconds');
+
+                $agent->setAttribute('stats_calls', $totalCalls);
+                $agent->setAttribute('stats_connected', $connected);
+                $agent->setAttribute('stats_booked', $booked);
+                $agent->setAttribute('stats_book_rate', $connected > 0 ? round(($booked / $connected) * 100, 1) : 0);
+                $agent->setAttribute('stats_talk_seconds', (int) $talkSeconds);
+
+                return $agent;
+            })
+            ->sortByDesc('stats_calls');
     }
 
     public function formatDuration(int $seconds): string
@@ -370,6 +434,106 @@ class extends Component
         </div>
     </div>
 
+    {{-- Booking Rate Stats --}}
+    <div class="mb-6 grid grid-cols-3 gap-4">
+        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Booked Today') }}</flux:text>
+            <div class="mt-1 flex items-baseline gap-2">
+                <flux:heading size="xl" class="text-green-600 dark:text-green-400">{{ $this->bookingStats['today']['rate'] }}%</flux:heading>
+                <span class="text-sm text-zinc-500">{{ $this->bookingStats['today']['booked'] }}/{{ $this->bookingStats['today']['connected'] }} {{ __('connected') }}</span>
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Booked This Week') }}</flux:text>
+            <div class="mt-1 flex items-baseline gap-2">
+                <flux:heading size="xl" class="text-blue-600 dark:text-blue-400">{{ $this->bookingStats['week']['rate'] }}%</flux:heading>
+                <span class="text-sm text-zinc-500">{{ $this->bookingStats['week']['booked'] }}/{{ $this->bookingStats['week']['connected'] }}</span>
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Booked This Month') }}</flux:text>
+            <div class="mt-1 flex items-baseline gap-2">
+                <flux:heading size="xl" class="text-purple-600 dark:text-purple-400">{{ $this->bookingStats['month']['rate'] }}%</flux:heading>
+                <span class="text-sm text-zinc-500">{{ $this->bookingStats['month']['booked'] }}/{{ $this->bookingStats['month']['connected'] }}</span>
+            </div>
+        </div>
+    </div>
+
+    {{-- Disposition Breakdown + Agent Performance side by side --}}
+    <div class="mb-6 grid gap-6 lg:grid-cols-2">
+        {{-- Disposition Breakdown --}}
+        <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+            <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+                <flux:heading size="sm">{{ __("Today's Disposition Breakdown") }}</flux:heading>
+            </div>
+            <div class="p-4">
+                @if (empty($this->dispositionBreakdown))
+                    <flux:text class="py-4 text-center text-zinc-400">{{ __('No dispositions yet today.') }}</flux:text>
+                @else
+                    <div class="space-y-2">
+                        @php $dispTotal = array_sum($this->dispositionBreakdown); @endphp
+                        @foreach ($this->dispositionBreakdown as $disposition => $count)
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <flux:badge size="sm" color="{{ $this->getDispositionColor($disposition) }}">{{ str_replace('_', ' ', ucfirst($disposition)) }}</flux:badge>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <div class="h-2 w-24 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-700">
+                                        <div class="h-full rounded-full bg-zinc-400" style="width: {{ round(($count / $dispTotal) * 100) }}%"></div>
+                                    </div>
+                                    <span class="w-8 text-right font-mono text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ $count }}</span>
+                                    <span class="w-10 text-right text-xs text-zinc-400">{{ round(($count / $dispTotal) * 100) }}%</span>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+        </div>
+
+        {{-- Agent Performance --}}
+        <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+            <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+                <flux:heading size="sm">{{ __('Agent Performance Today') }}</flux:heading>
+            </div>
+            <div class="p-4">
+                @if ($this->agentPerformance->isEmpty())
+                    <flux:text class="py-4 text-center text-zinc-400">{{ __('No agents online.') }}</flux:text>
+                @else
+                    <flux:table>
+                        <flux:table.columns>
+                            <flux:table.column>{{ __('Agent') }}</flux:table.column>
+                            <flux:table.column class="text-right">{{ __('Calls') }}</flux:table.column>
+                            <flux:table.column class="text-right">{{ __('Connected') }}</flux:table.column>
+                            <flux:table.column class="text-right">{{ __('Booked') }}</flux:table.column>
+                            <flux:table.column class="text-right">{{ __('Book %') }}</flux:table.column>
+                            <flux:table.column class="text-right">{{ __('Talk Time') }}</flux:table.column>
+                        </flux:table.columns>
+                        <flux:table.rows>
+                            @foreach ($this->agentPerformance as $agent)
+                                <flux:table.row wire:key="perf-{{ $agent->id }}">
+                                    <flux:table.cell>
+                                        <div class="flex items-center gap-2">
+                                            <span class="inline-flex size-2 rounded-full {{ match($agent->status) { 'available' => 'bg-green-500', 'on_call' => 'bg-blue-500', 'ringing' => 'bg-amber-500', default => 'bg-zinc-400' } }}"></span>
+                                            <span class="font-medium">{{ $agent->user?->name ?? 'Unknown' }}</span>
+                                        </div>
+                                    </flux:table.cell>
+                                    <flux:table.cell class="text-right font-mono">{{ $agent->stats_calls }}</flux:table.cell>
+                                    <flux:table.cell class="text-right font-mono">{{ $agent->stats_connected }}</flux:table.cell>
+                                    <flux:table.cell class="text-right font-mono text-green-600 dark:text-green-400">{{ $agent->stats_booked }}</flux:table.cell>
+                                    <flux:table.cell class="text-right font-mono font-bold {{ $agent->stats_book_rate >= 10 ? 'text-green-600 dark:text-green-400' : 'text-zinc-500' }}">{{ $agent->stats_book_rate }}%</flux:table.cell>
+                                    <flux:table.cell class="text-right font-mono">{{ $this->formatTalkTime($agent->stats_talk_seconds) }}</flux:table.cell>
+                                </flux:table.row>
+                            @endforeach
+                        </flux:table.rows>
+                    </flux:table>
+                @endif
+            </div>
+        </div>
+    </div>
+
     {{-- Live Calls Panel (Supervisor) --}}
     <div class="mb-6">
         <div class="mb-3 flex items-center justify-between">
@@ -542,7 +706,7 @@ class extends Component
     <div class="mb-6 grid gap-6 lg:grid-cols-2">
         {{-- Recent Activity Feed --}}
         <div>
-            <flux:heading size="lg" class="mb-3">{{ __('Recent Activity') }}</flux:heading>
+            <flux:heading size="lg" class="mb-3">{{ __('Last Hour Activity') }}</flux:heading>
             @if ($this->recentCalls->isEmpty())
                 <div class="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-700 dark:bg-zinc-800">
                     <flux:icon name="phone" class="mx-auto mb-2 size-10 text-zinc-400" />
@@ -598,49 +762,6 @@ class extends Component
             @endif
         </div>
 
-        {{-- Agent Performance (Today) --}}
-        <div>
-            <flux:heading size="lg" class="mb-3">{{ __('Agent Performance') }} <span class="text-sm font-normal text-zinc-500">({{ __('Today') }})</span></flux:heading>
-            @if ($this->agentPerformance->isEmpty())
-                <div class="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-700 dark:bg-zinc-800">
-                    <flux:icon name="users" class="mx-auto mb-2 size-10 text-zinc-400" />
-                    <flux:text>{{ __('No agents online.') }}</flux:text>
-                </div>
-            @else
-                <flux:table>
-                    <flux:table.columns>
-                        <flux:table.column>{{ __('Agent') }}</flux:table.column>
-                        <flux:table.column>{{ __('Status') }}</flux:table.column>
-                        <flux:table.column class="text-right">{{ __('Calls') }}</flux:table.column>
-                        <flux:table.column class="text-right">{{ __('Talk Min') }}</flux:table.column>
-                    </flux:table.columns>
-
-                    <flux:table.rows>
-                        @foreach ($this->agentPerformance as $agent)
-                            <flux:table.row wire:key="agent-{{ $agent->id }}">
-                                <flux:table.cell>
-                                    <span class="font-medium">{{ $agent->user?->name ?? __('Unknown') }}</span>
-                                </flux:table.cell>
-
-                                <flux:table.cell>
-                                    <flux:badge size="sm" :color="$this->getStatusColor($agent->status)">
-                                        {{ ucfirst(str_replace('_', ' ', $agent->status)) }}
-                                    </flux:badge>
-                                </flux:table.cell>
-
-                                <flux:table.cell class="text-right">
-                                    {{ number_format($agent->daily_call_count) }}
-                                </flux:table.cell>
-
-                                <flux:table.cell class="text-right">
-                                    {{ number_format($agent->daily_talk_minutes) }}
-                                </flux:table.cell>
-                            </flux:table.row>
-                        @endforeach
-                    </flux:table.rows>
-                </flux:table>
-            @endif
-        </div>
     </div>
 
     {{-- Campaign Performance Summary --}}
