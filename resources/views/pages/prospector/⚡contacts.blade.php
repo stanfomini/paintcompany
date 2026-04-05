@@ -250,7 +250,15 @@ class extends Component
 
         if ($this->editingId) {
             $contact = Contact::findOrFail($this->editingId);
+            $oldTags = $contact->tags ?? [];
             $contact->update($data);
+
+            // Trigger tag_added sequences for newly added tags
+            $newlyAdded = array_values(array_diff($contact->fresh()->tags ?? [], $oldTags));
+            if (! empty($newlyAdded)) {
+                app(\App\Services\Prospector\SequenceAutoEnrollmentService::class)
+                    ->handleTagAdded($contact, $newlyAdded);
+            }
         } else {
             $intake = app(\App\Services\Prospector\ContactIntakeService::class);
             $intake->findOrCreate(
@@ -723,6 +731,13 @@ class extends Component
             $existing = $contact->tags ?? [];
             $merged = array_unique(array_merge($existing, $newTags));
             $contact->update(['tags' => array_values($merged)]);
+
+            // Trigger tag_added sequences for newly added tags
+            $addedTags = array_values(array_diff($merged, $existing));
+            if (! empty($addedTags)) {
+                app(\App\Services\Prospector\SequenceAutoEnrollmentService::class)
+                    ->handleTagAdded($contact, $addedTags);
+            }
         }
 
         $count = $contacts->count();
