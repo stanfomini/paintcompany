@@ -77,7 +77,7 @@ class DialerSession extends Model
 
     public function scopeActive(Builder $query): void
     {
-        $query->where('status', 'active');
+        $query->whereIn('status', ['active', 'paused']);
     }
 
     public function scopeForAgent(Builder $query, int $agentId): void

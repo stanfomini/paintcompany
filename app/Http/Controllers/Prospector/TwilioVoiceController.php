@@ -319,7 +319,7 @@ class TwilioVoiceController extends Controller
                 $q->whereIn('status', ['available', 'nearby'])
                     ->orWhere(function ($q2) {
                         $q2->whereIn('status', ['on_call', 'ringing'])
-                            ->whereHas('dialerSessions', fn ($ds) => $ds->where('status', 'active'));
+                            ->whereHas('dialerSessions', fn ($ds) => $ds->whereIn('status', ['active', 'paused']));
                     });
             })
             // Exclude agents who already have a pending inbound call on hold

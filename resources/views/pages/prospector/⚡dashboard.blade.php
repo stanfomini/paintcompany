@@ -131,7 +131,7 @@ class extends Component
     {
         return [
             'active_agents' => Agent::whereIn('status', ['available', 'on_call', 'ringing', 'wrap_up', 'break'])->count(),
-            'active_sessions' => DialerSession::where('status', 'active')->count(),
+            'active_sessions' => DialerSession::whereIn('status', ['active', 'paused'])->count(),
             'contacts_in_queue' => CampaignContact::where('status', 'queued')
                 ->whereHas('campaign', fn ($q) => $q->where('status', 'active'))
                 ->count(),
@@ -143,7 +143,7 @@ class extends Component
     public function activeSessions(): \Illuminate\Support\Collection
     {
         return DialerSession::query()
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'paused'])
             ->with(['agent.user', 'campaign'])
             ->orderByDesc('started_at')
             ->get();
