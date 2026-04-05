@@ -311,7 +311,16 @@ class extends Component
     }
 }; ?>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+@script
+<script>
+    if (!window.__chartJsLoaded) {
+        window.__chartJsLoaded = true;
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4';
+        document.head.appendChild(s);
+    }
+</script>
+@endscript
 
 <div
     x-data="{
@@ -386,17 +395,17 @@ class extends Component
         },
 
         init() {
-            // Wait for Chart.js to be available, then render
-            const waitForChartJs = () => {
+            // Wait for Chart.js CDN to load, then render initial chart
+            const waitForChartJs = (attempts = 0) => {
                 if (typeof Chart !== 'undefined') {
                     if ($wire.tab === 'builder') {
                         this.renderBuilderChart();
                     }
-                } else {
-                    setTimeout(waitForChartJs, 100);
+                } else if (attempts < 50) {
+                    setTimeout(() => waitForChartJs(attempts + 1), 200);
                 }
             };
-            $nextTick(() => waitForChartJs());
+            waitForChartJs();
 
             $watch('$wire.chartMetric', () => this.renderBuilderChart());
             $watch('$wire.chartDimension', () => this.renderBuilderChart());
