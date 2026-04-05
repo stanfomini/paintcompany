@@ -25,6 +25,7 @@ class SequenceEnrollment extends Model
         'enrolled_at',
         'completed_at',
         'enrolled_by',
+        'enrolled_via',
     ];
 
     protected function casts(): array

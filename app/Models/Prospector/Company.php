@@ -34,6 +34,7 @@ class Company extends Model
         'notes',
         'default_campaign_id',
         'default_rvm_template_id',
+        'default_disposition_sequences',
     ];
 
     protected function casts(): array
@@ -42,6 +43,7 @@ class Company extends Model
             'business_days' => 'array',
             'settings' => 'array',
             'is_active' => 'boolean',
+            'default_disposition_sequences' => 'array',
         ];
     }
 
