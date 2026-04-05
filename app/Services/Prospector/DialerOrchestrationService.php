@@ -445,6 +445,10 @@ class DialerOrchestrationService
             }
         }
 
+        // Auto-enroll in sequence based on disposition
+        app(SequenceAutoEnrollmentService::class)
+            ->handleDisposition($call->contact, $disposition, $call->campaign);
+
         // Campaign stats
         $call->campaign->increment('calls_attempted');
 
