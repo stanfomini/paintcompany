@@ -86,17 +86,58 @@ class extends Component
     #[Computed]
     public function prospectorCompanyFields(): array
     {
-        return ['name', 'timezone', 'notes', 'business_hours_start', 'business_hours_end', 'color'];
+        return $this->getTableColumns('prospector_companies');
     }
 
     #[Computed]
     public function prospectorContactFields(): array
     {
-        return [
-            'first_name', 'last_name', 'phone', 'phone_2', 'email',
-            'address', 'city', 'state', 'zip', 'timezone',
-            'tags', 'custom_fields', 'source',
-        ];
+        return $this->getTableColumns('prospector_contacts');
+    }
+
+    #[Computed]
+    public function hostCompanyColumns(): array
+    {
+        if (! $this->companyModel || ! class_exists($this->companyModel)) {
+            return [];
+        }
+
+        try {
+            $table = (new $this->companyModel)->getTable();
+
+            return $this->getTableColumns($table);
+        } catch (\Exception) {
+            return [];
+        }
+    }
+
+    #[Computed]
+    public function hostContactColumns(): array
+    {
+        if (! $this->contactModel || ! class_exists($this->contactModel)) {
+            return [];
+        }
+
+        try {
+            $table = (new $this->contactModel)->getTable();
+
+            return $this->getTableColumns($table);
+        } catch (\Exception) {
+            return [];
+        }
+    }
+
+    private function getTableColumns(string $table): array
+    {
+        $skip = ['id', 'created_at', 'updated_at', 'deleted_at', 'remember_token', 'password'];
+
+        try {
+            $columns = \Illuminate\Support\Facades\Schema::getColumnListing($table);
+
+            return array_values(array_diff($columns, $skip));
+        } catch (\Exception) {
+            return [];
+        }
     }
 
     #[Computed]
@@ -144,6 +185,16 @@ class extends Component
 
         unset($this->companySyncStats);
         $this->dispatch('notify', message: 'Company mapping saved.');
+    }
+
+    public function updatedCompanyModel(): void
+    {
+        unset($this->hostCompanyColumns);
+    }
+
+    public function updatedContactModel(): void
+    {
+        unset($this->hostContactColumns);
     }
 
     public function addCompanyField(): void
@@ -259,7 +310,7 @@ class extends Component
                 {{-- Model selector --}}
                 <div>
                     <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Host Model Class</label>
-                    <select wire:model="companyModel" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+                    <select wire:model.live="companyModel" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
                         <option value="">-- Select a model --</option>
                         @foreach ($this->availableModels as $class => $label)
                             <option value="{{ $class }}">{{ $label }} ({{ $class }})</option>
@@ -299,7 +350,7 @@ class extends Component
                 {{-- Add field mapping --}}
                 <div class="flex items-end gap-2">
                     <div class="flex-1">
-                        <label class="mb-1 block text-xs text-zinc-500">Prospector Field</label>
+                        <label class="mb-1 block text-xs text-zinc-500">Prospector Column</label>
                         <select wire:model="newCompanyProspectorField" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
                             <option value="">Select...</option>
                             @foreach ($this->prospectorCompanyFields as $field)
@@ -309,9 +360,19 @@ class extends Component
                             @endforeach
                         </select>
                     </div>
+                    <div class="px-2 pb-2 text-zinc-400">→</div>
                     <div class="flex-1">
-                        <label class="mb-1 block text-xs text-zinc-500">Your Model Field</label>
-                        <input wire:model="newCompanyHostField" type="text" placeholder="e.g. business_name" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100" />
+                        <label class="mb-1 block text-xs text-zinc-500">Host Model Column</label>
+                        @if (! empty($this->hostCompanyColumns))
+                            <select wire:model="newCompanyHostField" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+                                <option value="">Select...</option>
+                                @foreach ($this->hostCompanyColumns as $col)
+                                    <option value="{{ $col }}">{{ $col }}</option>
+                                @endforeach
+                            </select>
+                        @else
+                            <input wire:model="newCompanyHostField" type="text" placeholder="Select a model first" disabled class="w-full rounded-md border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100" />
+                        @endif
                     </div>
                     <flux:button size="sm" variant="ghost" wire:click="addCompanyField">Add</flux:button>
                 </div>
@@ -355,7 +416,7 @@ class extends Component
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Host Model Class</label>
-                        <select wire:model="contactModel" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+                        <select wire:model.live="contactModel" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
                             <option value="">-- Select a model --</option>
                             @foreach ($this->availableModels as $class => $label)
                                 <option value="{{ $class }}">{{ $label }} ({{ $class }})</option>
@@ -364,7 +425,16 @@ class extends Component
                     </div>
                     <div>
                         <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Company Foreign Key</label>
-                        <input wire:model="contactCompanyKey" type="text" placeholder="e.g. customer_id" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100" />
+                        @if (! empty($this->hostContactColumns))
+                            <select wire:model="contactCompanyKey" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+                                <option value="">Select...</option>
+                                @foreach ($this->hostContactColumns as $col)
+                                    <option value="{{ $col }}">{{ $col }}</option>
+                                @endforeach
+                            </select>
+                        @else
+                            <input wire:model="contactCompanyKey" type="text" placeholder="Select a model first" disabled class="w-full rounded-md border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100" />
+                        @endif
                         <p class="mt-1 text-xs text-zinc-400">The column on your model that links to the company model</p>
                     </div>
                 </div>
@@ -401,7 +471,7 @@ class extends Component
                 {{-- Add field mapping --}}
                 <div class="flex items-end gap-2">
                     <div class="flex-1">
-                        <label class="mb-1 block text-xs text-zinc-500">Prospector Field</label>
+                        <label class="mb-1 block text-xs text-zinc-500">Prospector Column</label>
                         <select wire:model="newContactProspectorField" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
                             <option value="">Select...</option>
                             @foreach ($this->prospectorContactFields as $field)
@@ -411,9 +481,19 @@ class extends Component
                             @endforeach
                         </select>
                     </div>
+                    <div class="px-2 pb-2 text-zinc-400">→</div>
                     <div class="flex-1">
-                        <label class="mb-1 block text-xs text-zinc-500">Your Model Field</label>
-                        <input wire:model="newContactHostField" type="text" placeholder="e.g. phone_number" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100" />
+                        <label class="mb-1 block text-xs text-zinc-500">Host Model Column</label>
+                        @if (! empty($this->hostContactColumns))
+                            <select wire:model="newContactHostField" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+                                <option value="">Select...</option>
+                                @foreach ($this->hostContactColumns as $col)
+                                    <option value="{{ $col }}">{{ $col }}</option>
+                                @endforeach
+                            </select>
+                        @else
+                            <input wire:model="newContactHostField" type="text" placeholder="Select a model first" disabled class="w-full rounded-md border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100" />
+                        @endif
                     </div>
                     <flux:button size="sm" variant="ghost" wire:click="addContactField">Add</flux:button>
                 </div>
