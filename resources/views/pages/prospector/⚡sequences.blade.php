@@ -35,6 +35,8 @@ class extends Component
     public string $description = '';
     public string $status = 'draft';
     public string $triggerType = 'manual';
+    public array $triggerSources = [];
+    public string $triggerTagsInput = '';
     public bool $businessHoursOnly = false;
 
     // Delete
@@ -103,6 +105,8 @@ class extends Component
         $this->description = $sequence->description ?? '';
         $this->status = $sequence->status;
         $this->triggerType = $sequence->trigger_type;
+        $this->triggerSources = $sequence->trigger_config['sources'] ?? [];
+        $this->triggerTagsInput = implode(', ', $sequence->trigger_config['tags'] ?? []);
         $this->businessHoursOnly = $sequence->business_hours_only;
         $this->showModal = true;
     }
@@ -135,12 +139,21 @@ class extends Component
             'businessHoursOnly' => ['boolean'],
         ]);
 
+        $triggerConfig = match ($this->triggerType) {
+            'new_contact' => ! empty($this->triggerSources) ? ['sources' => $this->triggerSources] : null,
+            'tag_added' => ! empty($this->triggerTagsInput)
+                ? ['tags' => array_map('trim', explode(',', $this->triggerTagsInput))]
+                : null,
+            default => null,
+        };
+
         $data = [
             'company_id' => $this->companyId,
             'name' => $this->name,
             'description' => $this->description ?: null,
             'status' => $this->status,
             'trigger_type' => $this->triggerType,
+            'trigger_config' => $triggerConfig,
             'business_hours_only' => $this->businessHoursOnly,
         ];
 
@@ -229,6 +242,8 @@ class extends Component
         $this->description = '';
         $this->status = 'draft';
         $this->triggerType = 'manual';
+        $this->triggerSources = [];
+        $this->triggerTagsInput = '';
         $this->businessHoursOnly = false;
     }
 }; ?>
@@ -427,13 +442,45 @@ class extends Component
                 <flux:select.option value="paused">{{ __('Paused') }}</flux:select.option>
             </flux:select>
 
-            <flux:select wire:model="triggerType" :label="__('Trigger Type')" required>
+            <flux:select wire:model.live="triggerType" :label="__('Trigger Type')" required>
                 <flux:select.option value="manual">{{ __('Manual') }}</flux:select.option>
                 <flux:select.option value="new_contact">{{ __('New Contact Added') }}</flux:select.option>
                 <flux:select.option value="tag_added">{{ __('Tag Added') }}</flux:select.option>
                 <flux:select.option value="disposition">{{ __('Disposition Set') }}</flux:select.option>
                 <flux:select.option value="webhook">{{ __('Webhook') }}</flux:select.option>
             </flux:select>
+
+            @if($triggerType === 'new_contact')
+                <div class="mt-3">
+                    <flux:text size="sm" class="mb-2 font-medium">{{ __('Source Filter (optional)') }}</flux:text>
+                    <flux:text size="sm" class="mb-2 text-zinc-500">{{ __('Only enroll contacts from these sources. Leave empty for all sources.') }}</flux:text>
+                    <div class="flex flex-wrap gap-3">
+                        @foreach(['webhook', 'manual', 'inbound_call', 'external'] as $src)
+                            <label class="flex items-center gap-2 text-sm">
+                                <input type="checkbox" wire:model="triggerSources" value="{{ $src }}" class="rounded border-zinc-300 text-blue-600">
+                                {{ ucfirst(str_replace('_', ' ', $src)) }}
+                            </label>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
+            @if($triggerType === 'tag_added')
+                <div class="mt-3">
+                    <flux:input
+                        wire:model="triggerTagsInput"
+                        :label="__('Trigger Tags')"
+                        :description="__('Comma-separated tags. Enrollment triggers when ANY of these tags is added to a contact.')"
+                        placeholder="hot-lead, interested, callback"
+                    />
+                </div>
+            @endif
+
+            @if($triggerType === 'disposition')
+                <div class="mt-3">
+                    <flux:text size="sm" class="text-zinc-500">{{ __('Disposition triggers are configured in Campaign Settings and Prospector Settings → Automation tab.') }}</flux:text>
+                </div>
+            @endif
 
             <flux:switch
                 wire:model="businessHoursOnly"
