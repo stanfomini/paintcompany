@@ -3,6 +3,7 @@
 use App\Models\Prospector\Campaign;
 use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\Contact;
+use App\Models\Prospector\Sequence;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -104,12 +105,21 @@ class extends Component
         $this->clearCaches();
     }
 
-    public function updateDispositionRoute(string $disposition, string $action, ?int $targetCampaignId = null): void
+    public function updateDispositionRoute(string $disposition, string $action, ?int $targetCampaignId = null, ?int $targetSequenceId = null): void
     {
         $this->dispositionRoutes[$disposition] = array_filter([
             'action' => $action,
             'target_campaign_id' => $action === 'move' ? $targetCampaignId : null,
+            'target_sequence_id' => $targetSequenceId,
         ]);
+        $this->saveDispositionRoutes();
+    }
+
+    public function updateDispositionSequence(string $disposition, ?int $sequenceId): void
+    {
+        $route = $this->dispositionRoutes[$disposition] ?? ['action' => 'stay'];
+        $route['target_sequence_id'] = $sequenceId ?: null;
+        $this->dispositionRoutes[$disposition] = array_filter($route);
         $this->saveDispositionRoutes();
     }
 
@@ -147,6 +157,20 @@ class extends Component
     public function otherCampaigns(): \Illuminate\Support\Collection
     {
         return Campaign::where('id', '!=', $this->campaignId)
+            ->orderBy('name')
+            ->get();
+    }
+
+    #[Computed]
+    public function availableSequences(): \Illuminate\Support\Collection
+    {
+        $campaign = Campaign::find($this->campaignId);
+        if (! $campaign?->company_id) {
+            return collect();
+        }
+
+        return Sequence::where('company_id', $campaign->company_id)
+            ->where('status', 'active')
             ->orderBy('name')
             ->get();
     }
@@ -473,7 +497,7 @@ class extends Component
 
     protected function clearCaches(): void
     {
-        unset($this->campaign, $this->stats, $this->queueContacts, $this->availableContacts, $this->otherCampaigns);
+        unset($this->campaign, $this->stats, $this->queueContacts, $this->availableContacts, $this->otherCampaigns, $this->availableSequences);
     }
 
     protected function getStatusBadgeColor(string $status): string
@@ -705,7 +729,7 @@ class extends Component
                         $action = $route['action'] ?? 'stay';
                         $targetId = $route['target_campaign_id'] ?? null;
                     @endphp
-                    <div class="flex items-center gap-3" wire:key="route-{{ $key }}">
+                    <div class="flex flex-wrap items-center gap-3" wire:key="route-{{ $key }}">
                         <div class="w-36 text-sm font-medium">{{ $config['label'] ?? ucfirst(str_replace('_', ' ', $key)) }}</div>
                         <select
                             class="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
@@ -727,6 +751,16 @@ class extends Component
                                 @endforeach
                             </select>
                         @endif
+                        @php $seqId = $route['target_sequence_id'] ?? null; @endphp
+                        <select
+                            class="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                            wire:change="updateDispositionSequence('{{ $key }}', $event.target.value)"
+                        >
+                            <option value="">{{ __('No sequence (use default)') }}</option>
+                            @foreach($this->availableSequences as $seq)
+                                <option value="{{ $seq->id }}" @selected($seqId == $seq->id)>{{ $seq->name }}</option>
+                            @endforeach
+                        </select>
                     </div>
                 @endforeach
             </div>
