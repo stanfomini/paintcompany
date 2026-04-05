@@ -47,10 +47,12 @@ class extends Component
 
         $this->bridgeEnabled = (bool) $settings->get('bridge_enabled', false);
         $this->companyModel = $settings->get('bridge.company_model', '') ?: '';
-        $this->companyFields = $settings->get('bridge.company_fields') ?: [];
+        $companyFields = $settings->get('bridge.company_fields') ?: [];
+        $this->companyFields = is_string($companyFields) ? (json_decode($companyFields, true) ?: []) : (array) $companyFields;
         $this->contactModel = $settings->get('bridge.contact_model', '') ?: '';
         $this->contactCompanyKey = $settings->get('bridge.contact_company_key', '') ?: '';
-        $this->contactFields = $settings->get('bridge.contact_fields') ?: [];
+        $contactFields = $settings->get('bridge.contact_fields') ?: [];
+        $this->contactFields = is_string($contactFields) ? (json_decode($contactFields, true) ?: []) : (array) $contactFields;
     }
 
     #[Computed]
