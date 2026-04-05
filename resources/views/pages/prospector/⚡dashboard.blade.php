@@ -130,10 +130,10 @@ class extends Component
     public function operationalStats(): array
     {
         return [
-            'active_agents' => Agent::online()->count(),
-            'active_sessions' => DialerSession::active()->count(),
-            'contacts_in_queue' => CampaignContact::queued()
-                ->whereHas('campaign', fn ($q) => $q->active())
+            'active_agents' => Agent::whereIn('status', ['available', 'on_call', 'ringing', 'wrap_up', 'break'])->count(),
+            'active_sessions' => DialerSession::where('status', 'active')->count(),
+            'contacts_in_queue' => CampaignContact::where('status', 'queued')
+                ->whereHas('campaign', fn ($q) => $q->where('status', 'active'))
                 ->count(),
             'sms_today' => SmsMessage::whereDate('created_at', today())->count(),
         ];
@@ -143,7 +143,7 @@ class extends Component
     public function activeSessions(): \Illuminate\Support\Collection
     {
         return DialerSession::query()
-            ->active()
+            ->where('status', 'active')
             ->with(['agent.user', 'campaign'])
             ->orderByDesc('started_at')
             ->get();
@@ -199,6 +199,24 @@ class extends Component
                 return $agent;
             })
             ->sortByDesc('stats_calls');
+    }
+
+    /**
+     * Called by wire:poll to force-refresh all dashboard data.
+     */
+    public function refreshDashboard(): void
+    {
+        unset(
+            $this->todayStats,
+            $this->bookingStats,
+            $this->dispositionBreakdown,
+            $this->operationalStats,
+            $this->activeSessions,
+            $this->recentCalls,
+            $this->campaignPerformance,
+            $this->agentPerformance,
+            $this->liveCalls,
+        );
     }
 
     public function formatDuration(int $seconds): string
@@ -338,7 +356,33 @@ class extends Component
     }
 }; ?>
 
-<div wire:poll.10s>
+<div
+    x-data="{
+        init() {
+            if (typeof Echo !== 'undefined') {
+                // Listen to all company channels for real-time updates
+                @foreach (\App\Models\Prospector\Company::where('is_active', true)->pluck('id') as $companyId)
+                    Echo.private('prospector.company.{{ $companyId }}')
+                        .listen('.queue.updated', () => { $wire.refreshDashboard(); })
+                        .listen('.lead.arrived', () => { $wire.refreshDashboard(); })
+                        .listen('.sms.received', () => { $wire.refreshDashboard(); });
+                @endforeach
+
+                // Listen to all agent channels for call events
+                @foreach (\App\Models\Prospector\Agent::pluck('id') as $agentId)
+                    Echo.private('prospector.agent.{{ $agentId }}')
+                        .listen('.dialer.call.ringing', () => { $wire.refreshDashboard(); })
+                        .listen('.dialer.call.connected', () => { $wire.refreshDashboard(); })
+                        .listen('.dialer.call.ended', () => { $wire.refreshDashboard(); })
+                        .listen('.inbound.call.ringing', () => { $wire.refreshDashboard(); });
+                @endforeach
+            }
+
+            // Backup refresh every 30 seconds in case websocket misses something
+            setInterval(() => { $wire.refreshDashboard(); }, 30000);
+        }
+    }"
+>
     <div class="mb-6">
         <flux:heading size="xl">{{ __('Prospector Dashboard') }}</flux:heading>
         <flux:text class="mt-1">{{ __('Real-time overview of calling operations and agent performance.') }}</flux:text>
@@ -624,6 +668,41 @@ class extends Component
                                 wire:target="bargeIntoCall({{ $liveCall->id }})"
                                 title="{{ __('Barge') }}"
                             />
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>
+
+    {{-- Online Agents --}}
+    <div class="mb-6">
+        <div class="mb-3 flex items-center gap-2">
+            <flux:heading size="lg">{{ __('Online Agents') }}</flux:heading>
+            @if ($this->agentPerformance->isNotEmpty())
+                <flux:badge size="sm" color="green">{{ $this->agentPerformance->count() }}</flux:badge>
+            @endif
+        </div>
+
+        @if ($this->agentPerformance->isEmpty())
+            <div class="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:icon name="users" class="mx-auto mb-2 size-10 text-zinc-400" />
+                <flux:text>{{ __('No agents online.') }}</flux:text>
+            </div>
+        @else
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                @foreach ($this->agentPerformance as $agent)
+                    <div class="flex items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
+                        <div class="flex items-center gap-3">
+                            <span class="inline-flex size-3 rounded-full {{ match($agent->status) { 'available' => 'bg-green-500', 'on_call' => 'bg-blue-500 animate-pulse', 'ringing' => 'bg-amber-500 animate-pulse', 'break' => 'bg-orange-500', default => 'bg-zinc-400' } }}"></span>
+                            <div>
+                                <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ $agent->user?->name ?? 'Unknown' }}</div>
+                                <div class="text-xs text-zinc-500">{{ ucfirst(str_replace('_', ' ', $agent->status)) }}</div>
+                            </div>
+                        </div>
+                        <div class="text-right text-xs text-zinc-500">
+                            <div>{{ $agent->stats_calls }} {{ __('calls') }}</div>
+                            <div class="font-medium {{ $agent->stats_booked > 0 ? 'text-green-600 dark:text-green-400' : '' }}">{{ $agent->stats_booked }} {{ __('booked') }}</div>
                         </div>
                     </div>
                 @endforeach
