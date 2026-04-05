@@ -61,6 +61,8 @@ class ContactIntakeService
 
             broadcast(new NewLeadArrived($contact, $company));
 
+            app(SequenceAutoEnrollmentService::class)->handleNewContact($contact);
+
             return new ContactIntakeResult(contact: $contact, wasCreated: true);
         });
     }
