@@ -1767,6 +1767,7 @@ class extends Component
         phoneError: null,
         phoneState: 'idle',
         phoneCompanyId: null,
+        phoneReconnecting: false,
 
         // Session state
         sessionState: 'idle', // idle, starting, ready, dialing, on_call, disposition
@@ -1884,18 +1885,42 @@ class extends Component
             phone.on('ready', (companyId) => {
                 this.phoneReady = true;
                 this.phoneError = null;
+                this.phoneReconnecting = false;
                 this.phoneCompanyId = companyId;
+                // Clear any session error that was a phone error
+                if (this.sessionError && (this.sessionError.includes('Phone') || this.sessionError.includes('Token') || this.sessionError.includes('reconnect'))) {
+                    this.sessionError = null;
+                }
             });
 
             phone.on('error', (msg) => {
                 const errorStr = typeof msg === 'string' ? msg : (msg?.message || String(msg));
-                this.phoneError = errorStr;
-                this.sessionError = errorStr;
-                // Auto-clear phone errors after 10 seconds (token refresh, reconnection, etc.)
-                setTimeout(() => {
-                    if (this.phoneError === errorStr) this.phoneError = null;
-                    if (this.sessionError === errorStr) this.sessionError = null;
-                }, 10000);
+
+                // During reconnection, suppress errors — they're expected
+                if (this.phoneReconnecting) {
+                    return;
+                }
+
+                // Don't show transient connection errors immediately —
+                // give the auto-reconnect 3 seconds to fix it
+                const errorDelay = setTimeout(() => {
+                    // Only show if still not ready after the delay
+                    if (!phone.isReady) {
+                        this.phoneError = errorStr;
+                        this.sessionError = errorStr;
+                        // Auto-clear after 8 seconds
+                        setTimeout(() => {
+                            if (this.phoneError === errorStr) this.phoneError = null;
+                            if (this.sessionError === errorStr) this.sessionError = null;
+                        }, 8000);
+                    }
+                }, 3000);
+
+                // If phone becomes ready before the delay, cancel the error
+                phone.on('ready', function clearPendingError() {
+                    clearTimeout(errorDelay);
+                    phone.off('ready', clearPendingError);
+                });
             });
 
             phone.on('state-change', (state) => {
@@ -1916,7 +1941,15 @@ class extends Component
 
             phone.on('unregistered', () => {
                 this.phoneReady = false;
-                this.phoneError = 'Phone disconnected — reconnecting...';
+                this.phoneReconnecting = true;
+                // Don't show error — the Device auto-reconnects in 3 seconds
+                // Only show if still disconnected after 5 seconds
+                setTimeout(() => {
+                    if (!phone.isReady && this.phoneReconnecting) {
+                        this.phoneReconnecting = false;
+                        this.phoneError = 'Phone disconnected — reconnecting...';
+                    }
+                }, 5000);
             });
 
             phone.on('disconnected', () => {
@@ -2210,16 +2243,24 @@ class extends Component
                 }
             });
 
-            // Handle tab visibility changes — refresh token when returning to tab
+            // Handle tab visibility changes — silently reconnect when returning
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible' && window.__softphone) {
-                    // Returning to tab — re-check phone state and refresh token if needed
+                    // Suppress errors during tab-return reconnection
+                    this.phoneReconnecting = true;
+
                     if (!window.__softphone.isReady && !window.__softphone.hasActiveCall) {
                         window.__softphone.init(window.__softphone.companyId).then(() => {
                             this.phoneReady = window.__softphone.isReady;
                             this.phoneError = null;
-                        }).catch(() => {});
+                            this.phoneReconnecting = false;
+                        }).catch(() => {
+                            this.phoneReconnecting = false;
+                        });
+                    } else {
+                        this.phoneReconnecting = false;
                     }
+
                     this.phoneReady = window.__softphone.isReady;
                     this.phoneCompanyId = window.__softphone.companyId;
                     this.phoneState = window.__softphone.state;
@@ -2430,6 +2471,12 @@ class extends Component
             </div>
 
             {{-- Session error banner --}}
+            <template x-if="phoneReconnecting && !sessionError">
+                <div class="flex items-center gap-2 border-b border-blue-200 bg-blue-50 px-4 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                    <flux:icon name="arrow-path" variant="micro" class="shrink-0 animate-spin" />
+                    <span>Reconnecting phone...</span>
+                </div>
+            </template>
             <template x-if="sessionError">
                 <div class="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
                     <flux:icon name="exclamation-triangle" variant="micro" class="shrink-0" />
