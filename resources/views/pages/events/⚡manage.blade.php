@@ -29,6 +29,8 @@ class extends Component
 
     public string $livekitUrl = '';
 
+    public bool $isHost = false;
+
     public int $viewerCount = 0;
 
     // Resource form fields
@@ -103,10 +105,14 @@ class extends Component
     {
         $this->event = $liveEvent->load(['questions', 'resources', 'registrations', 'serviceArea', 'service', 'host', 'chatThread']);
         $this->livekitUrl = config('services.livekit.url') ?? '';
+        $this->isHost = $this->event->host_user_id === auth()->id();
 
-        // Auto-generate host token if event is already live (page refresh while streaming)
+        // Auto-generate token if event is already live (page refresh while streaming)
         if ($this->event->status === 'live') {
-            $this->livekitToken = app(LiveKitService::class)->generateHostToken($this->event, auth()->user());
+            $liveKitService = app(LiveKitService::class);
+            $this->livekitToken = $this->isHost
+                ? $liveKitService->generateHostToken($this->event, auth()->user())
+                : $liveKitService->generateCoproducerToken($this->event, auth()->user());
         }
     }
 
@@ -1089,6 +1095,7 @@ class extends Component
                 scenes = (@js($scenes)).map(s => ({ ...s, overlays: s.overlays || [] }));
                 liveSceneIndex = @js($activeSceneIndex);
                 previewSceneIndex = @js($activeSceneIndex);
+                isHost = @js($isHost);
                 liveGuests = @js($connectedGuests->merge($this->guests)->unique('id')->map(fn ($g) => ['id' => $g->id, 'name' => $g->name, 'status' => $g->status, 'slot_number' => $g->slot_number, 'identity' => $g->getLivekitIdentity()])->values()->toArray());
                 @if ($livekitToken)
                     startStudio(@js($livekitToken), @js($livekitUrl), @js($event->id));
@@ -1503,34 +1510,40 @@ class extends Component
 
                 {{-- Controls bar --}}
                 <div class="flex items-center justify-center gap-3 border-t border-zinc-700 bg-zinc-900 px-4 py-3">
-                    {{-- Mic toggle --}}
-                    <button type="button" @click="toggleAudio()"
-                        class="flex size-11 items-center justify-center rounded-full transition-colors"
-                        :class="audioEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
-                    >
-                        <flux:icon name="microphone" class="size-5" />
-                    </button>
+                    {{-- Mic toggle (host only) --}}
+                    <template x-if="isHost">
+                        <button type="button" @click="toggleAudio()"
+                            class="flex size-11 items-center justify-center rounded-full transition-colors"
+                            :class="audioEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
+                        >
+                            <flux:icon name="microphone" class="size-5" />
+                        </button>
+                    </template>
 
-                    {{-- Camera toggle --}}
-                    <button type="button" @click="toggleVideo()"
-                        class="flex size-11 items-center justify-center rounded-full transition-colors"
-                        :class="videoEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
-                    >
-                        <flux:icon name="video-camera" class="size-5" />
-                    </button>
+                    {{-- Camera toggle (host only) --}}
+                    <template x-if="isHost">
+                        <button type="button" @click="toggleVideo()"
+                            class="flex size-11 items-center justify-center rounded-full transition-colors"
+                            :class="videoEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
+                        >
+                            <flux:icon name="video-camera" class="size-5" />
+                        </button>
+                    </template>
 
-                    {{-- Screen share --}}
-                    <button type="button" @click="toggleScreenShare()"
-                        class="flex size-11 items-center justify-center rounded-full transition-colors"
-                        :class="screenStream ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
-                    >
-                        <flux:icon name="computer-desktop" class="size-5" />
-                    </button>
+                    {{-- Screen share (host only) --}}
+                    <template x-if="isHost">
+                        <button type="button" @click="toggleScreenShare()"
+                            class="flex size-11 items-center justify-center rounded-full transition-colors"
+                            :class="screenStream ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
+                        >
+                            <flux:icon name="computer-desktop" class="size-5" />
+                        </button>
+                    </template>
 
                     <div class="mx-2 h-6 w-px bg-zinc-700"></div>
 
-                    {{-- Start Broadcasting / End Stream --}}
-                    <template x-if="!broadcasting">
+                    {{-- Start Broadcasting / End Stream (host only) --}}
+                    <template x-if="isHost && !broadcasting">
                         <button type="button" @click="startBroadcasting()"
                             class="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-red-500">
                             <span class="relative flex size-3">
@@ -1540,12 +1553,18 @@ class extends Component
                             {{ __('Start Broadcasting') }}
                         </button>
                     </template>
-                    <template x-if="broadcasting">
+                    <template x-if="isHost && broadcasting">
                         <flux:button wire:click="endStream"
                             wire:confirm="{{ __('Are you sure you want to end the stream?') }}"
                             variant="danger" size="sm" icon="x-mark">
                             {{ __('End Stream') }}
                         </flux:button>
+                    </template>
+                    {{-- Co-producer badge --}}
+                    <template x-if="!isHost">
+                        <span class="rounded-lg bg-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-400">
+                            {{ __('Co-Producer') }}
+                        </span>
                     </template>
                 </div>
 
@@ -1983,6 +2002,7 @@ class extends Component
             };
 
             return {
+                isHost: false,
                 connected: false,
                 broadcasting: false,   // true when canvas is published to LiveKit
                 audioEnabled: true,
@@ -2181,20 +2201,23 @@ class extends Component
                         return;
                     }
 
-                    // 2. Get local camera + mic (optional — studio works without host camera)
-                    try {
-                        const cameraStream = await navigator.mediaDevices.getUserMedia({
-                            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                            audio: { echoCancellation: true, noiseSuppression: true },
-                        });
+                    // 2. Get local camera + mic (host only — co-producers don't publish)
+                    if (this.isHost) {
+                        try {
+                            const cameraStream = await navigator.mediaDevices.getUserMedia({
+                                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                                audio: { echoCancellation: true, noiseSuppression: true },
+                            });
 
-                        hostAudioTrack = cameraStream.getAudioTracks()[0];
-                        const videoOnlyStream = new MediaStream(cameraStream.getVideoTracks());
-                        sourceManager.addSource('host', videoOnlyStream, 'You (Host)');
-                        console.log('[Studio] Host camera + mic acquired');
-                    } catch (err) {
-                        console.warn('[Studio] Camera/mic unavailable (non-fatal):', err.message);
-                        // Studio continues without host camera — guests and screen shares still work
+                            hostAudioTrack = cameraStream.getAudioTracks()[0];
+                            const videoOnlyStream = new MediaStream(cameraStream.getVideoTracks());
+                            sourceManager.addSource('host', videoOnlyStream, 'You (Host)');
+                            console.log('[Studio] Host camera + mic acquired');
+                        } catch (err) {
+                            console.warn('[Studio] Camera/mic unavailable (non-fatal):', err.message);
+                        }
+                    } else {
+                        console.log('[Studio] Co-producer mode — skipping camera/mic capture');
                     }
 
                     // 3. Initialize dual compositors (required for rendering)
