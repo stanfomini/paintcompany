@@ -30,6 +30,7 @@ Route::middleware(['auth:web', 'auth.internal'])->group(function () {
 
     // Contacts & Campaigns
     Route::livewire('/contacts', 'pages::prospector.contacts')->name('contacts');
+    Route::livewire('/reports', 'pages::prospector.reports')->name('reports');
     Route::livewire('/campaigns', 'pages::prospector.campaigns')->name('campaigns');
     Route::livewire('/campaigns/{campaignId}', 'pages::prospector.campaign-detail')->name('campaigns.show');
 

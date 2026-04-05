@@ -251,6 +251,9 @@
                     <flux:sidebar.item icon="list-bullet" :href="route('prospector.pipeline-view')" :current="request()->routeIs('prospector.pipeline-view')" wire:navigate>
                         {{ __('Lists') }}
                     </flux:sidebar.item>
+                    <flux:sidebar.item icon="chart-bar-square" :href="route('prospector.reports')" :current="request()->routeIs('prospector.reports')" wire:navigate>
+                        {{ __('Reports') }}
+                    </flux:sidebar.item>
                     <flux:sidebar.item icon="users" :href="route('prospector.contacts')" :current="request()->routeIs('prospector.contacts')" wire:navigate>
                         {{ __('Contacts') }}
                     </flux:sidebar.item>
