@@ -140,8 +140,8 @@ class AppServiceProvider extends ServiceProvider
             }
 
             // Prospector → host model sync (export direction)
-            \App\Models\Prospector\Company::observe(new \App\Observers\Prospector\ProspectorSyncObserver('companies'));
-            \App\Models\Prospector\Contact::observe(new \App\Observers\Prospector\ProspectorSyncObserver('contacts'));
+            \App\Models\Prospector\Company::observe(\App\Observers\Prospector\ProspectorSyncObserver::class);
+            \App\Models\Prospector\Contact::observe(\App\Observers\Prospector\ProspectorSyncObserver::class);
         });
     }
 
