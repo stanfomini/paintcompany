@@ -130,7 +130,7 @@ class extends Component
     public function operationalStats(): array
     {
         return [
-            'active_agents' => Agent::whereIn('status', ['available', 'on_call', 'ringing', 'wrap_up', 'break'])->count(),
+            'active_agents' => Agent::whereIn('status', ['available', 'on_call', 'ringing', 'wrap_up', 'break'])->distinct('user_id')->count('user_id'),
             'active_sessions' => DialerSession::whereIn('status', ['active', 'paused'])->count(),
             'contacts_in_queue' => CampaignContact::where('status', 'queued')
                 ->whereHas('campaign', fn ($q) => $q->where('status', 'active'))
@@ -176,29 +176,38 @@ class extends Component
     {
         $bookedDispositions = ['booked', 'interested', 'appointment_set'];
 
-        return Agent::query()
+        // Get all online agent records, grouped by user to avoid duplicates
+        $agents = Agent::query()
             ->with('user')
             ->whereIn('status', ['available', 'on_call', 'ringing', 'wrap_up', 'break'])
             ->get()
-            ->map(function (Agent $agent) use ($bookedDispositions) {
-                $todayCalls = Call::where('agent_id', $agent->id)
-                    ->where('direction', 'outbound')
-                    ->whereDate('started_at', today());
+            ->groupBy('user_id');
 
-                $totalCalls = (clone $todayCalls)->count();
-                $connected = (clone $todayCalls)->whereNotNull('answered_at')->count();
-                $booked = (clone $todayCalls)->whereIn('disposition', $bookedDispositions)->count();
-                $talkSeconds = (clone $todayCalls)->sum('talk_seconds');
+        return $agents->map(function ($agentGroup) use ($bookedDispositions) {
+            // Use the most "active" agent record for status display
+            $primaryAgent = $agentGroup->sortBy(fn ($a) => match ($a->status) {
+                'on_call' => 0, 'ringing' => 1, 'available' => 2, 'wrap_up' => 3, default => 4,
+            })->first();
 
-                $agent->setAttribute('stats_calls', $totalCalls);
-                $agent->setAttribute('stats_connected', $connected);
-                $agent->setAttribute('stats_booked', $booked);
-                $agent->setAttribute('stats_book_rate', $connected > 0 ? round(($booked / $connected) * 100, 1) : 0);
-                $agent->setAttribute('stats_talk_seconds', (int) $talkSeconds);
+            // Aggregate calls across ALL agent records for this user
+            $agentIds = $agentGroup->pluck('id');
+            $todayCalls = Call::whereIn('agent_id', $agentIds)
+                ->where('direction', 'outbound')
+                ->whereDate('started_at', today());
 
-                return $agent;
-            })
-            ->sortByDesc('stats_calls');
+            $totalCalls = (clone $todayCalls)->count();
+            $connected = (clone $todayCalls)->whereNotNull('answered_at')->count();
+            $booked = (clone $todayCalls)->whereIn('disposition', $bookedDispositions)->count();
+            $talkSeconds = (clone $todayCalls)->sum('talk_seconds');
+
+            $primaryAgent->setAttribute('stats_calls', $totalCalls);
+            $primaryAgent->setAttribute('stats_connected', $connected);
+            $primaryAgent->setAttribute('stats_booked', $booked);
+            $primaryAgent->setAttribute('stats_book_rate', $connected > 0 ? round(($booked / $connected) * 100, 1) : 0);
+            $primaryAgent->setAttribute('stats_talk_seconds', (int) $talkSeconds);
+
+            return $primaryAgent;
+        })->sortByDesc('stats_calls')->values();
     }
 
     /**
