@@ -4,6 +4,8 @@ namespace App\Services;
 
 use Agence104\LiveKit\AccessToken;
 use Agence104\LiveKit\AccessTokenOptions;
+use Agence104\LiveKit\EgressServiceClient;
+use Agence104\LiveKit\IngressServiceClient;
 use Agence104\LiveKit\RoomCreateOptions;
 use Agence104\LiveKit\RoomServiceClient;
 use Agence104\LiveKit\VideoGrant;
@@ -12,7 +14,9 @@ use App\Models\LiveEventGuest;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Livekit\IngressInput;
 use Livekit\ParticipantPermission;
+use Livekit\StreamOutput;
 
 class LiveKitService
 {
@@ -250,11 +254,103 @@ class LiveKitService
     }
 
     /**
+     * Create an RTMP ingress endpoint for the given event.
+     *
+     * @return array{ingressId: string, url: string, streamKey: string}
+     */
+    public function createRtmpIngress(LiveEvent $event): array
+    {
+        $ingress = $this->getIngressClient();
+
+        $result = $ingress->createIngress(
+            inputType: IngressInput::RTMP_INPUT,
+            name: "RTMP Ingest for {$event->title}",
+            roomName: $event->livekit_room_name,
+            participantIdentity: 'rtmp-ingest-'.Str::random(6),
+            participantName: 'RTMP Source',
+        );
+
+        Log::info('LiveKit: RTMP ingress created', [
+            'event_id' => $event->id,
+            'ingress_id' => $result->getIngressId(),
+        ]);
+
+        return [
+            'ingressId' => $result->getIngressId(),
+            'url' => $result->getUrl(),
+            'streamKey' => $result->getStreamKey(),
+        ];
+    }
+
+    /**
+     * Delete an RTMP ingress endpoint.
+     */
+    public function deleteRtmpIngress(string $ingressId): void
+    {
+        $this->getIngressClient()->deleteIngress($ingressId);
+
+        Log::info('LiveKit: RTMP ingress deleted', ['ingress_id' => $ingressId]);
+    }
+
+    /**
+     * Start RTMP egress (simulcast) to an external RTMP URL.
+     */
+    public function startRtmpEgress(LiveEvent $event, string $rtmpUrl): string
+    {
+        $output = new StreamOutput;
+        $output->setUrls([$rtmpUrl]);
+        $output->setProtocol(\Livekit\StreamProtocol::RTMP);
+
+        $result = $this->getEgressClient()->startRoomCompositeEgress(
+            roomName: $event->livekit_room_name,
+            output: $output,
+        );
+
+        $egressId = $result->getEgressId();
+
+        Log::info('LiveKit: RTMP egress started', [
+            'event_id' => $event->id,
+            'egress_id' => $egressId,
+            'rtmp_url' => Str::before($rtmpUrl, '?'),
+        ]);
+
+        return $egressId;
+    }
+
+    /**
+     * Stop an RTMP egress (simulcast).
+     */
+    public function stopRtmpEgress(string $egressId): void
+    {
+        $this->getEgressClient()->stopEgress($egressId);
+
+        Log::info('LiveKit: RTMP egress stopped', ['egress_id' => $egressId]);
+    }
+
+    /**
      * Create a RoomServiceClient instance with config credentials.
      */
     protected function getRoomClient(): RoomServiceClient
     {
         return new RoomServiceClient(
+            $this->url,
+            $this->apiKey,
+            $this->apiSecret,
+        );
+    }
+
+    protected function getIngressClient(): IngressServiceClient
+    {
+        return new IngressServiceClient(
+            $this->url,
+            $this->apiKey,
+            $this->apiSecret,
+        );
+    }
+
+    protected function getEgressClient(): EgressServiceClient
+    {
+        return new EgressServiceClient(
             $this->url,
             $this->apiKey,
             $this->apiSecret,

@@ -538,6 +538,72 @@ class extends Component
         $this->dispatch('template-deleted', id: $templateId);
     }
 
+    // ─── RTMP Ingress / Egress ────────────────────────────────────────
+
+    #[Renderless]
+    public function createRtmpIngress(): ?array
+    {
+        if ($this->event->status !== 'live') {
+            return null;
+        }
+
+        try {
+            return app(LiveKitService::class)->createRtmpIngress($this->event);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('LiveEvent: Failed to create RTMP ingress', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    #[Renderless]
+    public function deleteRtmpIngress(string $ingressId): void
+    {
+        try {
+            app(LiveKitService::class)->deleteRtmpIngress($ingressId);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('LiveEvent: Failed to delete RTMP ingress', [
+                'ingress_id' => $ingressId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    #[Renderless]
+    public function startRtmpEgress(string $rtmpUrl): ?string
+    {
+        if ($this->event->status !== 'live' || empty($rtmpUrl)) {
+            return null;
+        }
+
+        try {
+            return app(LiveKitService::class)->startRtmpEgress($this->event, $rtmpUrl);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('LiveEvent: Failed to start RTMP egress', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    #[Renderless]
+    public function stopRtmpEgress(string $egressId): void
+    {
+        try {
+            app(LiveKitService::class)->stopRtmpEgress($egressId);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('LiveEvent: Failed to stop RTMP egress', [
+                'egress_id' => $egressId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     // ─── Backstage Chat ─────────────────────────────────────────────
 
     #[Computed]
@@ -1217,6 +1283,18 @@ class extends Component
                             </div>
                         </template>
 
+                        {{-- Add Video URL button --}}
+                        <div class="shrink-0 w-36">
+                            <button type="button" @click="$flux.modal('add-video-modal').show()"
+                                class="relative w-full overflow-hidden rounded border-2 border-dashed border-zinc-600 bg-zinc-800/50 hover:border-zinc-500 hover:bg-zinc-800 transition-colors cursor-pointer"
+                                style="aspect-ratio: 16/9;">
+                                <div class="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                                    <flux:icon name="play-circle" class="size-5 text-zinc-500" />
+                                    <span class="text-[9px] text-zinc-500">{{ __('Add Video') }}</span>
+                                </div>
+                            </button>
+                        </div>
+
                         {{-- Empty state --}}
                         <div x-show="sources.length === 0" class="shrink-0 w-36">
                             <div class="relative overflow-hidden rounded border-2 border-dashed border-zinc-700 bg-zinc-900" style="aspect-ratio: 16/9;">
@@ -1566,7 +1644,141 @@ class extends Component
                             {{ __('Co-Producer') }}
                         </span>
                     </template>
+
+                    <div class="mx-2 h-6 w-px bg-zinc-700"></div>
+
+                    {{-- RTMP Ingress --}}
+                    <button type="button" @click="$flux.modal('rtmp-ingress-modal').show()"
+                        class="flex items-center gap-1.5 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-600">
+                        <flux:icon name="arrow-down-tray" class="size-4" />
+                        {{ __('RTMP In') }}
+                    </button>
+
+                    {{-- RTMP Simulcast --}}
+                    <template x-if="isHost">
+                        <button type="button" @click="$flux.modal('rtmp-simulcast-modal').show()"
+                            class="flex items-center gap-1.5 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-zinc-600">
+                            <flux:icon name="arrow-up-tray" class="size-4" />
+                            {{ __('Simulcast') }}
+                        </button>
+                    </template>
                 </div>
+
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- ADD VIDEO URL MODAL --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <flux:modal name="add-video-modal" class="w-full max-w-md">
+                    <div class="space-y-4" x-data="{ videoUrl: '', videoName: '' }">
+                        <flux:heading size="lg">{{ __('Add Video Source') }}</flux:heading>
+                        <flux:text class="text-sm text-zinc-400">{{ __('Enter a video URL (MP4, WebM, HLS) to add as a source.') }}</flux:text>
+
+                        <div class="space-y-3">
+                            <flux:input x-model="videoName" placeholder="{{ __('Source name (e.g., Intro Video)') }}" size="sm" />
+                            <flux:input x-model="videoUrl" placeholder="{{ __('https://example.com/video.mp4') }}" size="sm" />
+                        </div>
+
+                        <div class="flex justify-end gap-2">
+                            <flux:button size="sm" variant="ghost" @click="$flux.modal('add-video-modal').close()">{{ __('Cancel') }}</flux:button>
+                            <flux:button size="sm" variant="primary" @click="addVideoSource(videoUrl, videoName || 'Video'); videoUrl = ''; videoName = ''; $flux.modal('add-video-modal').close()">
+                                {{ __('Add Video') }}
+                            </flux:button>
+                        </div>
+                    </div>
+                </flux:modal>
+
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- RTMP SIMULCAST MODAL --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <flux:modal name="rtmp-simulcast-modal" class="w-full max-w-lg">
+                    <div class="space-y-4">
+                        <flux:heading size="lg">{{ __('Simulcast Destinations') }}</flux:heading>
+                        <flux:text class="text-sm text-zinc-400">{{ __('Forward your broadcast to YouTube Live, Facebook Live, Twitch, etc.') }}</flux:text>
+
+                        {{-- Active destinations --}}
+                        <template x-if="rtmpDestinations.length > 0">
+                            <div class="space-y-2">
+                                <template x-for="(dest, idx) in rtmpDestinations" :key="idx">
+                                    <div class="flex items-center justify-between rounded-lg bg-zinc-800 px-3 py-2">
+                                        <div class="min-w-0">
+                                            <span class="text-sm font-medium text-zinc-200 block truncate" x-text="dest.name"></span>
+                                            <span class="text-xs text-zinc-500 block truncate" x-text="dest.url.substring(0, 40) + '...'"></span>
+                                        </div>
+                                        <div class="flex items-center gap-2 shrink-0 ml-2">
+                                            <template x-if="dest.active">
+                                                <span class="flex items-center gap-1 text-xs text-green-400">
+                                                    <span class="size-2 rounded-full bg-green-500 animate-pulse"></span> Live
+                                                </span>
+                                            </template>
+                                            <template x-if="!dest.active && broadcasting">
+                                                <flux:button size="xs" variant="primary" @click="startSimulcast(idx)">{{ __('Start') }}</flux:button>
+                                            </template>
+                                            <template x-if="dest.active">
+                                                <flux:button size="xs" variant="danger" @click="stopSimulcast(idx)">{{ __('Stop') }}</flux:button>
+                                            </template>
+                                            <flux:button size="xs" variant="ghost" icon="trash" @click="removeRtmpDestination(idx)" />
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+
+                        {{-- Add new destination --}}
+                        <div class="border-t border-zinc-700 pt-4 space-y-3" x-data="{ destName: '', destUrl: '' }">
+                            <flux:heading size="sm">{{ __('Add Destination') }}</flux:heading>
+                            <flux:input x-model="destName" placeholder="{{ __('Name (e.g., YouTube Live)') }}" size="sm" />
+                            <flux:input x-model="destUrl" placeholder="{{ __('rtmp://a.rtmp.youtube.com/live2/xxxx-xxxx') }}" size="sm" />
+                            <flux:button size="sm" variant="primary" class="w-full"
+                                @click="addRtmpDestination(destName || 'RTMP', destUrl); destName = ''; destUrl = ''">
+                                {{ __('Add') }}
+                            </flux:button>
+                        </div>
+                    </div>
+                </flux:modal>
+
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- RTMP INGRESS MODAL --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <flux:modal name="rtmp-ingress-modal" class="w-full max-w-lg">
+                    <div class="space-y-4">
+                        <flux:heading size="lg">{{ __('RTMP Ingest') }}</flux:heading>
+                        <flux:text class="text-sm text-zinc-400">{{ __('Send an RTMP stream from OBS or another tool into your studio.') }}</flux:text>
+
+                        <template x-if="ingressInfo">
+                            <div class="space-y-3">
+                                <div class="rounded-lg bg-zinc-800 p-3">
+                                    <label class="block text-xs font-medium text-zinc-400 mb-1">{{ __('RTMP URL') }}</label>
+                                    <div class="flex items-center gap-2">
+                                        <code class="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 truncate" x-text="ingressInfo.url"></code>
+                                        <button type="button" @click="navigator.clipboard.writeText(ingressInfo.url)" class="text-xs text-blue-400 hover:text-blue-300 shrink-0">{{ __('Copy') }}</button>
+                                    </div>
+                                </div>
+                                <div class="rounded-lg bg-zinc-800 p-3">
+                                    <label class="block text-xs font-medium text-zinc-400 mb-1">{{ __('Stream Key') }}</label>
+                                    <div class="flex items-center gap-2">
+                                        <code class="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200 truncate" x-text="ingressInfo.streamKey"></code>
+                                        <button type="button" @click="navigator.clipboard.writeText(ingressInfo.streamKey)" class="text-xs text-blue-400 hover:text-blue-300 shrink-0">{{ __('Copy') }}</button>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="size-2 rounded-full" :class="ingressInfo.active ? 'bg-green-500 animate-pulse' : 'bg-zinc-600'"></span>
+                                    <span class="text-xs" :class="ingressInfo.active ? 'text-green-400' : 'text-zinc-500'" x-text="ingressInfo.active ? 'Receiving stream' : 'Waiting for stream...'"></span>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="!ingressInfo">
+                            <flux:button size="sm" variant="primary" class="w-full" @click="createIngress()" wire:loading.attr="disabled">
+                                {{ __('Generate RTMP Endpoint') }}
+                            </flux:button>
+                        </template>
+
+                        <template x-if="ingressInfo">
+                            <flux:button size="sm" variant="danger" class="w-full" @click="deleteIngress()">
+                                {{ __('Remove RTMP Endpoint') }}
+                            </flux:button>
+                        </template>
+                    </div>
+                </flux:modal>
 
                 {{-- ═══════════════════════════════════════════ --}}
                 {{-- TEMPLATE MODAL --}}
@@ -2015,6 +2227,9 @@ class extends Component
                 liveSceneIndex: 0,
                 scenes: [],
                 screenStream: null,
+                rtmpDestinations: [],   // [{name, url, active, egressId}]
+                ingressInfo: null,      // {url, streamKey, ingressId, active}
+                _videoSources: [],      // Track video URL sources for cleanup
 
                 get currentOverlays() {
                     return this.scenes[this.previewSceneIndex]?.overlays || [];
@@ -2587,6 +2802,111 @@ class extends Component
                         });
                     } catch (err) {
                         console.warn('[Studio] Screen share cancelled:', err.message);
+                    }
+                },
+
+                // ==============================================================
+                // Video URL Sources
+                // ==============================================================
+
+                async addVideoSource(url, name) {
+                    if (!url || !sourceManager) return;
+
+                    const videoEl = document.createElement('video');
+                    videoEl.crossOrigin = 'anonymous';
+                    videoEl.src = url;
+                    videoEl.loop = true;
+                    videoEl.muted = true; // Muted to allow autoplay
+                    videoEl.playsInline = true;
+                    videoEl.style.display = 'none';
+                    document.body.appendChild(videoEl);
+
+                    try {
+                        await videoEl.play();
+                    } catch (err) {
+                        console.warn('[Studio] Video autoplay failed, trying with interaction:', err.message);
+                    }
+
+                    const key = 'video-' + Date.now();
+                    const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
+                    sourceManager.addSource(key, stream, name);
+                    this._videoSources.push({ key, el: videoEl });
+                    console.log(`[Studio] Video source added: ${name} (${key})`);
+                },
+
+                // ==============================================================
+                // RTMP Ingress (external stream INTO studio)
+                // ==============================================================
+
+                async createIngress() {
+                    try {
+                        const result = await this.$wire.createRtmpIngress();
+                        if (result) {
+                            this.ingressInfo = result;
+                            console.log('[Studio] RTMP ingress created:', result.url);
+                        }
+                    } catch (err) {
+                        console.error('[Studio] Failed to create ingress:', err);
+                        this.connectionError = 'Failed to create RTMP endpoint: ' + (err.message || 'Unknown error');
+                    }
+                },
+
+                async deleteIngress() {
+                    if (!this.ingressInfo?.ingressId) return;
+                    try {
+                        await this.$wire.deleteRtmpIngress(this.ingressInfo.ingressId);
+                        this.ingressInfo = null;
+                        console.log('[Studio] RTMP ingress deleted');
+                    } catch (err) {
+                        console.error('[Studio] Failed to delete ingress:', err);
+                    }
+                },
+
+                // ==============================================================
+                // RTMP Egress / Simulcast (studio → external platforms)
+                // ==============================================================
+
+                addRtmpDestination(name, url) {
+                    if (!url) return;
+                    this.rtmpDestinations.push({ name, url, active: false, egressId: null });
+                },
+
+                removeRtmpDestination(index) {
+                    const dest = this.rtmpDestinations[index];
+                    if (dest?.active && dest?.egressId) {
+                        this.stopSimulcast(index);
+                    }
+                    this.rtmpDestinations.splice(index, 1);
+                },
+
+                async startSimulcast(index) {
+                    const dest = this.rtmpDestinations[index];
+                    if (!dest || dest.active) return;
+
+                    try {
+                        const egressId = await this.$wire.startRtmpEgress(dest.url);
+                        if (egressId) {
+                            this.rtmpDestinations[index].active = true;
+                            this.rtmpDestinations[index].egressId = egressId;
+                            console.log(`[Studio] Simulcast started: ${dest.name} → ${dest.url}`);
+                        }
+                    } catch (err) {
+                        console.error('[Studio] Failed to start simulcast:', err);
+                        this.connectionError = 'Failed to start simulcast: ' + (err.message || 'Unknown error');
+                    }
+                },
+
+                async stopSimulcast(index) {
+                    const dest = this.rtmpDestinations[index];
+                    if (!dest?.egressId) return;
+
+                    try {
+                        await this.$wire.stopRtmpEgress(dest.egressId);
+                        this.rtmpDestinations[index].active = false;
+                        this.rtmpDestinations[index].egressId = null;
+                        console.log(`[Studio] Simulcast stopped: ${dest.name}`);
+                    } catch (err) {
+                        console.error('[Studio] Failed to stop simulcast:', err);
                     }
                 },
 
