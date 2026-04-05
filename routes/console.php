@@ -31,3 +31,4 @@ Schedule::command('live-events:send-reminders')->everyFifteenMinutes();
 Schedule::command('prospector:execute-sequences')->everyMinute();
 Schedule::command('prospector:process-callbacks')->everyMinute();
 Schedule::command('prospector:reset-daily-calls')->dailyAt('00:00');
+Schedule::command('prospector:clean-stale')->everyFifteenMinutes();
