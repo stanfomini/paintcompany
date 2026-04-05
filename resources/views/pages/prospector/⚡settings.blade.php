@@ -71,6 +71,7 @@ class extends Component
     public int $maxConcurrentLines = 1;
     public int $ringTimeoutSeconds = 30;
     public bool $amdEnabled = true;
+    public bool $recordingEnabled = false;
 
     // TCPA
     public string $callingHoursStart = '08:00';
@@ -104,6 +105,7 @@ class extends Component
         $this->maxConcurrentLines = (int) $settings->get('defaults.max_concurrent_lines', 1);
         $this->ringTimeoutSeconds = (int) $settings->get('defaults.ring_timeout_seconds', 30);
         $this->amdEnabled = (bool) $settings->get('defaults.amd_enabled', true);
+        $this->recordingEnabled = (bool) $settings->get('defaults.recording_enabled', false);
         $this->callingHoursStart = $settings->get('tcpa.calling_hours_start', '08:00');
         $this->callingHoursEnd = $settings->get('tcpa.calling_hours_end', '21:00');
         $this->maxAttemptsPerContact = (int) $settings->get('tcpa.max_attempts_per_contact', 3);
@@ -274,6 +276,7 @@ class extends Component
             'defaults.max_concurrent_lines' => $this->maxConcurrentLines,
             'defaults.ring_timeout_seconds' => $this->ringTimeoutSeconds,
             'defaults.amd_enabled' => $this->amdEnabled,
+            'defaults.recording_enabled' => $this->recordingEnabled,
         ]);
         $this->dispatch('notify', message: 'Dialer defaults saved.');
     }
@@ -1232,6 +1235,14 @@ class extends Component
                             <flux:text class="text-xs">{{ __('Automatically detect voicemail and answering machines.') }}</flux:text>
                         </div>
                         <flux:switch wire:model.live="amdEnabled" />
+                    </div>
+
+                    <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                        <div>
+                            <flux:label>{{ __('Call Recording') }}</flux:label>
+                            <flux:text class="text-xs">{{ __('Record all conference calls. Required for AI call intelligence.') }}</flux:text>
+                        </div>
+                        <flux:switch wire:model.live="recordingEnabled" />
                     </div>
 
                     <div class="flex items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">

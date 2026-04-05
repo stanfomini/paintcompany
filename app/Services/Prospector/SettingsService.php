@@ -27,6 +27,7 @@ class SettingsService
         'defaults.max_concurrent_lines' => ['value' => 1, 'type' => 'integer'],
         'defaults.ring_timeout_seconds' => ['value' => 30, 'type' => 'integer'],
         'defaults.amd_enabled' => ['value' => true, 'type' => 'boolean'],
+        'defaults.recording_enabled' => ['value' => false, 'type' => 'boolean'],
 
         // TCPA
         'tcpa.calling_hours_start' => ['value' => '08:00', 'type' => 'string'],

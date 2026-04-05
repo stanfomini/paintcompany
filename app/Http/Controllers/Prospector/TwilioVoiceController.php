@@ -127,16 +127,22 @@ class TwilioVoiceController extends Controller
         if ($conferenceName) {
             $response = new VoiceResponse;
             $dial = $response->dial();
-            $dial->conference($conferenceName, [
+
+            $conferenceParams = [
                 'startConferenceOnEnter' => true,
                 'endConferenceOnExit' => false,
                 'beep' => false,
-                'record' => 'record-from-answer',
-                'recordingStatusCallback' => route('prospector.webhook.twilio.conference.recording'),
-                'recordingStatusCallbackEvent' => 'completed',
                 'statusCallback' => route('prospector.webhook.twilio.conference.status'),
                 'statusCallbackEvent' => 'join leave end',
-            ]);
+            ];
+
+            if (app(\App\Services\Prospector\SettingsService::class)->get('defaults.recording_enabled', false)) {
+                $conferenceParams['record'] = 'record-from-answer';
+                $conferenceParams['recordingStatusCallback'] = route('prospector.webhook.twilio.conference.recording');
+                $conferenceParams['recordingStatusCallbackEvent'] = 'completed';
+            }
+
+            $dial->conference($conferenceName, $conferenceParams);
 
             return $this->twimlResponse($response);
         }
