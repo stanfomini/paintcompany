@@ -34,7 +34,13 @@ class LiveEventService
 
         $data['status'] = 'scheduled';
         $data['livekit_room_name'] = 'event-'.Str::random(12);
-        $data['slug'] = Str::slug($data['title']);
+        $slug = Str::slug($data['title']);
+        $original = $slug;
+        $counter = 2;
+        while (LiveEvent::where('slug', $slug)->exists()) {
+            $slug = $original.'-'.$counter++;
+        }
+        $data['slug'] = $slug;
         $data['chat_thread_id'] = $chatThread->id;
 
         return LiveEvent::create($data);
