@@ -332,15 +332,18 @@ class extends Component
         }
 
         try {
-            $bridge = app(\App\Services\PythonBridgeService::class);
-            $result = $bridge->healthCheck();
+            $url = rtrim($this->pythonUrl, '/') . '/health';
+            $response = \Illuminate\Support\Facades\Http::timeout(5)->get($url);
+            $result = $response->json() ?? [];
+
             if (($result['status'] ?? '') === 'healthy') {
-                $this->dispatch('notify', message: 'Python service is healthy.');
+                $version = $result['python_version'] ?? 'unknown';
+                $this->dispatch('notify', message: "Python service is healthy (Python {$version}).");
             } else {
-                $this->dispatch('notify', message: 'Python service unreachable: ' . ($result['message'] ?? 'Unknown error'), type: 'error');
+                $this->dispatch('notify', message: 'Unexpected response from Python service.', type: 'error');
             }
         } catch (\Throwable $e) {
-            $this->dispatch('notify', message: 'Python service unreachable: ' . $e->getMessage(), type: 'error');
+            $this->dispatch('notify', message: 'Cannot reach Python service at ' . $this->pythonUrl . ': ' . $e->getMessage(), type: 'error');
         }
     }
 
