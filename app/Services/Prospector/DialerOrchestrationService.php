@@ -435,6 +435,13 @@ class DialerOrchestrationService
                     $entry->update(['status' => 'completed']);
                     $call->contact->update(['do_not_call' => true]);
                     break;
+
+                case 'archive':
+                    $entry->update([
+                        'status' => 'archived',
+                        'archived_at' => now(),
+                    ]);
+                    break;
             }
         }
 
