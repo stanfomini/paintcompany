@@ -340,28 +340,53 @@ class extends Component
         async renderBuilderChart() {
             if (typeof Chart === 'undefined') return;
             const data = await $wire.getChartData();
+            if (!data || !data.labels) return;
             if (this.builderChart) this.builderChart.destroy();
             const canvas = this.$refs.builderCanvas;
             if (!canvas) return;
             const type = this.resolveChartType($wire.chartType);
+            const isPieType = (type === 'pie' || type === 'doughnut');
+            const isSingleDataset = data.datasets.length === 1;
+
+            // For single datasets (no group-by), give each bar/slice its own color
+            const datasets = data.datasets.map((ds, i) => {
+                if (isSingleDataset && !isPieType && type !== 'line') {
+                    return {
+                        ...ds,
+                        backgroundColor: ds.data.map((_, j) => this.colors[j % this.colors.length] + '99'),
+                        borderColor: ds.data.map((_, j) => this.colors[j % this.colors.length]),
+                        borderWidth: 2,
+                    };
+                }
+                if (isPieType) {
+                    return {
+                        ...ds,
+                        backgroundColor: ds.data.map((_, j) => this.colors[j % this.colors.length] + '99'),
+                        borderColor: ds.data.map((_, j) => this.colors[j % this.colors.length]),
+                        borderWidth: 2,
+                    };
+                }
+                return {
+                    ...ds,
+                    backgroundColor: type === 'line' ? 'transparent' : (this.colors[i % this.colors.length] + '99'),
+                    borderColor: this.colors[i % this.colors.length],
+                    borderWidth: 2,
+                    fill: $wire.chartType === 'area',
+                };
+            });
+
             this.builderChart = new Chart(canvas, {
                 type: type,
-                data: {
-                    labels: data.labels,
-                    datasets: data.datasets.map((ds, i) => ({
-                        ...ds,
-                        backgroundColor: type === 'line' ? 'transparent' : (this.colors[i % this.colors.length] + '99'),
-                        borderColor: this.colors[i % this.colors.length],
-                        borderWidth: 2,
-                        fill: $wire.chartType === 'area',
-                    }))
-                },
+                data: { labels: data.labels, datasets: datasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     indexAxis: $wire.chartType === 'horizontal-bar' ? 'y' : 'x',
-                    plugins: { legend: { display: data.datasets.length > 1 } },
-                    scales: type === 'pie' || type === 'doughnut' ? {} : {
+                    plugins: {
+                        legend: { display: data.datasets.length > 1 || isPieType },
+                        tooltip: { enabled: true },
+                    },
+                    scales: isPieType ? {} : {
                         y: { beginAtZero: true, stacked: $wire.chartType === 'stacked-bar' },
                         x: { stacked: $wire.chartType === 'stacked-bar' }
                     }
@@ -407,11 +432,18 @@ class extends Component
             };
             waitForChartJs();
 
-            $watch('$wire.chartMetric', () => this.renderBuilderChart());
-            $watch('$wire.chartDimension', () => this.renderBuilderChart());
-            $watch('$wire.chartGroupBy', () => this.renderBuilderChart());
-            $watch('$wire.chartType', () => this.renderBuilderChart());
-            $watch('$wire.dateRange', () => this.renderBuilderChart());
+            // Re-render chart when any control changes
+            const rerender = () => this.renderBuilderChart();
+            $watch('$wire.chartMetric', rerender);
+            $watch('$wire.chartDimension', rerender);
+            $watch('$wire.chartGroupBy', rerender);
+            $watch('$wire.chartType', rerender);
+            $watch('$wire.dateRange', rerender);
+            $watch('$wire.filterCompanyIds', rerender);
+            $watch('$wire.filterCampaignIds', rerender);
+            $watch('$wire.filterAgentIds', rerender);
+            $watch('$wire.filterDispositions', rerender);
+            $watch('$wire.filterDirection', rerender);
             $watch('$wire.tab', (val) => {
                 if (val === 'builder') {
                     $nextTick(() => this.renderBuilderChart());

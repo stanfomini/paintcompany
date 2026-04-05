@@ -264,17 +264,24 @@ class ReportMetricService
             }
         }
 
-        if (! empty($filters['company_ids'])) {
-            $query->whereIn('prospector_calls.company_id', (array) $filters['company_ids']);
+        $companyIds = array_filter((array) ($filters['company_ids'] ?? []), fn ($v) => $v !== '' && $v !== null);
+        if (! empty($companyIds)) {
+            $query->whereIn('prospector_calls.company_id', $companyIds);
         }
-        if (! empty($filters['campaign_ids'])) {
-            $query->whereIn('prospector_calls.campaign_id', (array) $filters['campaign_ids']);
+
+        $campaignIds = array_filter((array) ($filters['campaign_ids'] ?? []), fn ($v) => $v !== '' && $v !== null);
+        if (! empty($campaignIds)) {
+            $query->whereIn('prospector_calls.campaign_id', $campaignIds);
         }
-        if (! empty($filters['agent_ids'])) {
-            $query->whereIn('prospector_calls.agent_id', (array) $filters['agent_ids']);
+
+        $agentIds = array_filter((array) ($filters['agent_ids'] ?? []), fn ($v) => $v !== '' && $v !== null);
+        if (! empty($agentIds)) {
+            $query->whereIn('prospector_calls.agent_id', $agentIds);
         }
-        if (! empty($filters['dispositions'])) {
-            $query->whereIn('prospector_calls.disposition', (array) $filters['dispositions']);
+
+        $dispositions = array_filter((array) ($filters['dispositions'] ?? []), fn ($v) => $v !== '' && $v !== null);
+        if (! empty($dispositions)) {
+            $query->whereIn('prospector_calls.disposition', $dispositions);
         }
         if (! empty($filters['direction'])) {
             $query->where('prospector_calls.direction', $filters['direction']);
