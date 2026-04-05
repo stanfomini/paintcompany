@@ -262,7 +262,7 @@ class DialerOrchestrationService
                 ]);
             }
 
-            $amdParams = config('prospector.defaults.amd_enabled')
+            $amdParams = app(SettingsService::class)->get('defaults.amd_enabled', true)
                 ? $this->amdService->getAmdParams()
                 : [];
 

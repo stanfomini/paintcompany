@@ -37,7 +37,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(\App\Services\Prospector\SettingsService::class);
     }
 
     /**
@@ -116,24 +116,33 @@ class AppServiceProvider extends ServiceProvider
 
     protected function registerProspectorBridge(): void
     {
-        if (! config('prospector-bridge.enabled', false)) {
-            return;
-        }
+        $this->app->booted(function () {
+            try {
+                $settings = app(\App\Services\Prospector\SettingsService::class);
 
-        // Host model → Prospector sync (import direction)
-        $companyModel = config('prospector-bridge.companies.model');
-        if ($companyModel && class_exists($companyModel)) {
-            $companyModel::observe(new \App\Observers\Prospector\HostModelObserver('companies'));
-        }
+                if (! $settings->get('bridge_enabled', false)) {
+                    return;
+                }
+            } catch (\Exception $e) {
+                // Database may not be ready (migrations, fresh install)
+                return;
+            }
 
-        $contactModel = config('prospector-bridge.contacts.model');
-        if ($contactModel && class_exists($contactModel)) {
-            $contactModel::observe(new \App\Observers\Prospector\HostModelObserver('contacts'));
-        }
+            // Host model → Prospector sync (import direction)
+            $companyModel = config('prospector-bridge.companies.model');
+            if ($companyModel && class_exists($companyModel)) {
+                $companyModel::observe(new \App\Observers\Prospector\HostModelObserver('companies'));
+            }
 
-        // Prospector → host model sync (export direction)
-        \App\Models\Prospector\Company::observe(new \App\Observers\Prospector\ProspectorSyncObserver('companies'));
-        \App\Models\Prospector\Contact::observe(new \App\Observers\Prospector\ProspectorSyncObserver('contacts'));
+            $contactModel = config('prospector-bridge.contacts.model');
+            if ($contactModel && class_exists($contactModel)) {
+                $contactModel::observe(new \App\Observers\Prospector\HostModelObserver('contacts'));
+            }
+
+            // Prospector → host model sync (export direction)
+            \App\Models\Prospector\Company::observe(new \App\Observers\Prospector\ProspectorSyncObserver('companies'));
+            \App\Models\Prospector\Contact::observe(new \App\Observers\Prospector\ProspectorSyncObserver('contacts'));
+        });
     }
 
     protected function configureDefaults(): void

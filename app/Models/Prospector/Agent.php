@@ -19,6 +19,7 @@ class Agent extends Model
     protected $fillable = [
         'user_id',
         'company_id',
+        'role',
         'status',
         'status_changed_at',
         'max_concurrent_lines',
@@ -115,6 +116,30 @@ class Agent extends Model
     public function isAvailable(): bool
     {
         return $this->status === 'available';
+    }
+
+    /**
+     * Check if the agent has the admin role.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    /**
+     * Check if the agent has supervisor-level access (supervisor or admin).
+     */
+    public function isSupervisor(): bool
+    {
+        return in_array($this->role, ['supervisor', 'admin']);
+    }
+
+    /**
+     * Check if the agent can act as an agent (all roles can).
+     */
+    public function isAgent(): bool
+    {
+        return true;
     }
 
     /**

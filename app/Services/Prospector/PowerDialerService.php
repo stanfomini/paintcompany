@@ -296,7 +296,7 @@ class PowerDialerService
 
         // Get AMD params if enabled
         $amdParams = [];
-        if (config('prospector.defaults.amd_enabled')) {
+        if (app(SettingsService::class)->get('defaults.amd_enabled', true)) {
             $amdParams = $this->amdService->getAmdParams();
         }
 

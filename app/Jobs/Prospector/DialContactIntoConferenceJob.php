@@ -33,7 +33,7 @@ class DialContactIntoConferenceJob implements ShouldQueue
     {
         try {
             $amdParams = [];
-            if (config('prospector.defaults.amd_enabled')) {
+            if (app(\App\Services\Prospector\SettingsService::class)->get('defaults.amd_enabled', true)) {
                 $amdParams = app(AmdService::class)->getAmdParams();
             }
 

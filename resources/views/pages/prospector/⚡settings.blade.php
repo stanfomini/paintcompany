@@ -66,6 +66,31 @@ class extends Component
     public ?int $automationCompanyId = null;
     public array $defaultSequences = [];
 
+    // Dialer defaults
+    public int $wrapUpSeconds = 30;
+    public int $maxConcurrentLines = 1;
+    public int $ringTimeoutSeconds = 30;
+    public bool $amdEnabled = true;
+
+    // TCPA
+    public string $callingHoursStart = '08:00';
+    public string $callingHoursEnd = '21:00';
+    public int $maxAttemptsPerContact = 3;
+    public int $minHoursBetweenAttempts = 4;
+
+    // Rate limits
+    public int $callsPerSecond = 1;
+    public int $dailyCallLimit = 1000;
+    public int $dailySmsLimit = 500;
+
+    // Python service
+    public bool $pythonEnabled = false;
+    public string $pythonUrl = 'http://127.0.0.1:8100';
+    public int $pythonTimeout = 60;
+
+    // Bridge
+    public bool $bridgeEnabled = false;
+
     public function mount(): void
     {
         $ai = AiSetting::current();
@@ -73,6 +98,23 @@ class extends Component
         $this->aiModel = $ai->model;
         $this->aiApiKey = '';
         $this->aiEnabled = $ai->enabled;
+
+        $settings = app(\App\Services\Prospector\SettingsService::class);
+        $this->wrapUpSeconds = (int) $settings->get('defaults.wrap_up_seconds', 30);
+        $this->maxConcurrentLines = (int) $settings->get('defaults.max_concurrent_lines', 1);
+        $this->ringTimeoutSeconds = (int) $settings->get('defaults.ring_timeout_seconds', 30);
+        $this->amdEnabled = (bool) $settings->get('defaults.amd_enabled', true);
+        $this->callingHoursStart = $settings->get('tcpa.calling_hours_start', '08:00');
+        $this->callingHoursEnd = $settings->get('tcpa.calling_hours_end', '21:00');
+        $this->maxAttemptsPerContact = (int) $settings->get('tcpa.max_attempts_per_contact', 3);
+        $this->minHoursBetweenAttempts = (int) $settings->get('tcpa.min_hours_between_attempts', 4);
+        $this->callsPerSecond = (int) $settings->get('rate_limits.calls_per_second', 1);
+        $this->dailyCallLimit = (int) $settings->get('rate_limits.daily_call_limit', 1000);
+        $this->dailySmsLimit = (int) $settings->get('rate_limits.daily_sms_limit', 500);
+        $this->pythonEnabled = (bool) $settings->get('python.enabled', false);
+        $this->pythonUrl = $settings->get('python.url', 'http://127.0.0.1:8100');
+        $this->pythonTimeout = (int) $settings->get('python.timeout', 60);
+        $this->bridgeEnabled = (bool) $settings->get('bridge_enabled', false);
     }
 
     public function boot(): void
@@ -223,6 +265,93 @@ class extends Component
             ->where('status', 'active')
             ->orderBy('name')
             ->get();
+    }
+
+    public function saveDialerDefaults(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        app(\App\Services\Prospector\SettingsService::class)->setMany([
+            'defaults.wrap_up_seconds' => $this->wrapUpSeconds,
+            'defaults.max_concurrent_lines' => $this->maxConcurrentLines,
+            'defaults.ring_timeout_seconds' => $this->ringTimeoutSeconds,
+            'defaults.amd_enabled' => $this->amdEnabled,
+        ]);
+        $this->dispatch('notify', message: 'Dialer defaults saved.');
+    }
+
+    public function saveTcpaSettings(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        app(\App\Services\Prospector\SettingsService::class)->setMany([
+            'tcpa.calling_hours_start' => $this->callingHoursStart,
+            'tcpa.calling_hours_end' => $this->callingHoursEnd,
+            'tcpa.max_attempts_per_contact' => $this->maxAttemptsPerContact,
+            'tcpa.min_hours_between_attempts' => $this->minHoursBetweenAttempts,
+        ]);
+        $this->dispatch('notify', message: 'TCPA settings saved.');
+    }
+
+    public function saveRateLimits(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        app(\App\Services\Prospector\SettingsService::class)->setMany([
+            'rate_limits.calls_per_second' => $this->callsPerSecond,
+            'rate_limits.daily_call_limit' => $this->dailyCallLimit,
+            'rate_limits.daily_sms_limit' => $this->dailySmsLimit,
+        ]);
+        $this->dispatch('notify', message: 'Rate limits saved.');
+    }
+
+    public function savePythonSettings(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        app(\App\Services\Prospector\SettingsService::class)->setMany([
+            'python.enabled' => $this->pythonEnabled,
+            'python.url' => $this->pythonUrl,
+            'python.timeout' => $this->pythonTimeout,
+        ]);
+        $this->dispatch('notify', message: 'Python service settings saved.');
+    }
+
+    public function testPythonConnection(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        try {
+            $bridge = app(\App\Services\PythonBridgeService::class);
+            $result = $bridge->healthCheck();
+            if (($result['status'] ?? '') === 'healthy') {
+                $this->dispatch('notify', message: 'Python service is healthy.');
+            } else {
+                $this->dispatch('notify', message: 'Python service unreachable: ' . ($result['message'] ?? 'Unknown error'), type: 'error');
+            }
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: 'Python service unreachable: ' . $e->getMessage(), type: 'error');
+        }
+    }
+
+    public function saveBridgeSettings(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        app(\App\Services\Prospector\SettingsService::class)->set('bridge_enabled', $this->bridgeEnabled);
+        $this->dispatch('notify', message: 'Bridge settings saved.');
     }
 
     public function openCreateServiceModal(): void
@@ -586,6 +715,36 @@ class extends Component
             ])
         >
             {{ __('Automation') }}
+        </button>
+        <button
+            wire:click="$set('activeTab', 'dialer')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'dialer',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'dialer',
+            ])
+        >
+            {{ __('Dialer') }}
+        </button>
+        <button
+            wire:click="$set('activeTab', 'tcpa')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'tcpa',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'tcpa',
+            ])
+        >
+            {{ __('TCPA') }}
+        </button>
+        <button
+            wire:click="$set('activeTab', 'python')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'python',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'python',
+            ])
+        >
+            {{ __('AI Service') }}
         </button>
     </div>
 
@@ -1029,6 +1188,227 @@ class extends Component
                     </div>
                 </div>
             @endif
+        </div>
+    @endif
+
+    {{-- ===================== Dialer Tab ===================== --}}
+    @if ($activeTab === 'dialer')
+        <div class="space-y-6">
+            {{-- Dialer Defaults Card --}}
+            <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:heading size="lg" class="mb-1">{{ __('Dialer Defaults') }}</flux:heading>
+                <flux:text class="mb-6 text-sm">{{ __('Default settings for the power dialer. These apply to all new dialing sessions.') }}</flux:text>
+
+                <div class="space-y-5">
+                    <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                        <flux:input
+                            wire:model="wrapUpSeconds"
+                            type="number"
+                            min="0"
+                            max="300"
+                            :label="__('Wrap-Up Time (seconds)')"
+                            :description="__('Time between calls for agent notes.')"
+                        />
+                        <flux:input
+                            wire:model="maxConcurrentLines"
+                            type="number"
+                            min="1"
+                            max="10"
+                            :label="__('Max Concurrent Lines')"
+                            :description="__('Number of simultaneous outbound lines.')"
+                        />
+                        <flux:input
+                            wire:model="ringTimeoutSeconds"
+                            type="number"
+                            min="10"
+                            max="120"
+                            :label="__('Ring Timeout (seconds)')"
+                            :description="__('How long to ring before giving up.')"
+                        />
+                    </div>
+
+                    <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                        <div>
+                            <flux:label>{{ __('Answering Machine Detection (AMD)') }}</flux:label>
+                            <flux:text class="text-xs">{{ __('Automatically detect voicemail and answering machines.') }}</flux:text>
+                        </div>
+                        <flux:switch wire:model.live="amdEnabled" />
+                    </div>
+
+                    <div class="flex items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                        <flux:button variant="primary" wire:click="saveDialerDefaults" wire:loading.attr="disabled" wire:target="saveDialerDefaults">
+                            <span wire:loading.remove wire:target="saveDialerDefaults">{{ __('Save Dialer Defaults') }}</span>
+                            <span wire:loading wire:target="saveDialerDefaults">{{ __('Saving...') }}</span>
+                        </flux:button>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Rate Limits Card --}}
+            <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:heading size="lg" class="mb-1">{{ __('Rate Limits') }}</flux:heading>
+                <flux:text class="mb-6 text-sm">{{ __('Control outbound call and SMS throughput to stay within carrier limits.') }}</flux:text>
+
+                <div class="space-y-5">
+                    <div class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                        <flux:input
+                            wire:model="callsPerSecond"
+                            type="number"
+                            min="1"
+                            max="30"
+                            :label="__('Calls Per Second')"
+                            :description="__('Max outbound call rate.')"
+                        />
+                        <flux:input
+                            wire:model="dailyCallLimit"
+                            type="number"
+                            min="0"
+                            max="100000"
+                            :label="__('Daily Call Limit')"
+                            :description="__('Max calls per day (0 = unlimited).')"
+                        />
+                        <flux:input
+                            wire:model="dailySmsLimit"
+                            type="number"
+                            min="0"
+                            max="100000"
+                            :label="__('Daily SMS Limit')"
+                            :description="__('Max SMS messages per day (0 = unlimited).')"
+                        />
+                    </div>
+
+                    <div class="flex items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                        <flux:button variant="primary" wire:click="saveRateLimits" wire:loading.attr="disabled" wire:target="saveRateLimits">
+                            <span wire:loading.remove wire:target="saveRateLimits">{{ __('Save Rate Limits') }}</span>
+                            <span wire:loading wire:target="saveRateLimits">{{ __('Saving...') }}</span>
+                        </flux:button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ===================== TCPA Tab ===================== --}}
+    @if ($activeTab === 'tcpa')
+        <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
+            <flux:heading size="lg" class="mb-1">{{ __('TCPA Compliance') }}</flux:heading>
+            <flux:text class="mb-6 text-sm">{{ __('Configure calling hour restrictions and contact attempt limits to comply with TCPA regulations.') }}</flux:text>
+
+            <div class="space-y-5">
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <flux:input
+                        wire:model="callingHoursStart"
+                        type="time"
+                        :label="__('Calling Hours Start')"
+                        :description="__('Earliest time to place outbound calls (contact local time).')"
+                    />
+                    <flux:input
+                        wire:model="callingHoursEnd"
+                        type="time"
+                        :label="__('Calling Hours End')"
+                        :description="__('Latest time to place outbound calls (contact local time).')"
+                    />
+                </div>
+
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <flux:input
+                        wire:model="maxAttemptsPerContact"
+                        type="number"
+                        min="1"
+                        max="20"
+                        :label="__('Max Attempts Per Contact')"
+                        :description="__('Maximum call attempts before marking contact as exhausted.')"
+                    />
+                    <flux:input
+                        wire:model="minHoursBetweenAttempts"
+                        type="number"
+                        min="1"
+                        max="72"
+                        :label="__('Min Hours Between Attempts')"
+                        :description="__('Minimum gap between call attempts to the same contact.')"
+                    />
+                </div>
+
+                <div class="flex items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                    <flux:button variant="primary" wire:click="saveTcpaSettings" wire:loading.attr="disabled" wire:target="saveTcpaSettings">
+                        <span wire:loading.remove wire:target="saveTcpaSettings">{{ __('Save TCPA Settings') }}</span>
+                        <span wire:loading wire:target="saveTcpaSettings">{{ __('Saving...') }}</span>
+                    </flux:button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ===================== AI Service Tab ===================== --}}
+    @if ($activeTab === 'python')
+        <div class="space-y-6">
+            {{-- Python AI Service Card --}}
+            <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:heading size="lg" class="mb-1">{{ __('Python AI Service') }}</flux:heading>
+                <flux:text class="mb-6 text-sm">{{ __('Configure the Python FastAPI service used for ML processing, transcription, and call analysis.') }}</flux:text>
+
+                <div class="space-y-5">
+                    <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                        <div>
+                            <flux:label>{{ __('Enable Python Service') }}</flux:label>
+                            <flux:text class="text-xs">{{ __('Connect to the Python AI service for ML features.') }}</flux:text>
+                        </div>
+                        <flux:switch wire:model.live="pythonEnabled" />
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                        <flux:input
+                            wire:model="pythonUrl"
+                            type="url"
+                            :label="__('Service URL')"
+                            :placeholder="__('http://127.0.0.1:8100')"
+                            :description="__('Base URL of the Python FastAPI service.')"
+                        />
+                        <flux:input
+                            wire:model="pythonTimeout"
+                            type="number"
+                            min="5"
+                            max="300"
+                            :label="__('Timeout (seconds)')"
+                            :description="__('Request timeout for Python service calls.')"
+                        />
+                    </div>
+
+                    <div class="flex items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                        <flux:button variant="primary" wire:click="savePythonSettings" wire:loading.attr="disabled" wire:target="savePythonSettings">
+                            <span wire:loading.remove wire:target="savePythonSettings">{{ __('Save Python Settings') }}</span>
+                            <span wire:loading wire:target="savePythonSettings">{{ __('Saving...') }}</span>
+                        </flux:button>
+                        <flux:button variant="ghost" wire:click="testPythonConnection" wire:loading.attr="disabled" wire:target="testPythonConnection">
+                            <span wire:loading.remove wire:target="testPythonConnection">{{ __('Test Connection') }}</span>
+                            <span wire:loading wire:target="testPythonConnection">{{ __('Testing...') }}</span>
+                        </flux:button>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Model Bridge Card --}}
+            <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:heading size="lg" class="mb-1">{{ __('Model Bridge') }}</flux:heading>
+                <flux:text class="mb-6 text-sm">{{ __('Enable the bridge between Prospector and the main application models for cross-system data sharing.') }}</flux:text>
+
+                <div class="space-y-5">
+                    <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                        <div>
+                            <flux:label>{{ __('Enable Model Bridge') }}</flux:label>
+                            <flux:text class="text-xs">{{ __('Allow Prospector contacts to sync with CRM customers and properties.') }}</flux:text>
+                        </div>
+                        <flux:switch wire:model.live="bridgeEnabled" />
+                    </div>
+
+                    <div class="flex items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                        <flux:button variant="primary" wire:click="saveBridgeSettings" wire:loading.attr="disabled" wire:target="saveBridgeSettings">
+                            <span wire:loading.remove wire:target="saveBridgeSettings">{{ __('Save Bridge Settings') }}</span>
+                            <span wire:loading wire:target="saveBridgeSettings">{{ __('Saving...') }}</span>
+                        </flux:button>
+                    </div>
+                </div>
+            </div>
         </div>
     @endif
 

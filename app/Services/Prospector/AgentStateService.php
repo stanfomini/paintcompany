@@ -127,7 +127,7 @@ class AgentStateService
         $this->setStatus($agent, 'wrap_up');
 
         $wrapUpSeconds = $agent->wrap_up_seconds
-            ?? config('prospector.defaults.wrap_up_seconds', 30);
+            ?? app(SettingsService::class)->get('defaults.wrap_up_seconds', 30);
 
         // Dispatch delayed auto-available transition
         // The job class will be created by the task that builds jobs

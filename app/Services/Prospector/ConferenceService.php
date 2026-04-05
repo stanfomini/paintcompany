@@ -38,10 +38,10 @@ class ConferenceService
             );
         }
 
-        // Read API Key from database (per-account), fall back to config
-        $apiKeySid = $twilioAccount->api_key_sid ?: config('prospector.twilio.api_key_sid');
-        $apiKeySecret = $twilioAccount->api_key_secret ?: config('prospector.twilio.api_key_secret');
-        $twimlAppSid = $twilioAccount->twiml_app_sid ?: config('prospector.twilio.twiml_app_sid');
+        // Read API Key from database (per-account)
+        $apiKeySid = $twilioAccount->api_key_sid;
+        $apiKeySecret = $twilioAccount->api_key_secret;
+        $twimlAppSid = $twilioAccount->twiml_app_sid;
 
         if (! $apiKeySid || ! $apiKeySecret) {
             throw new RuntimeException(
@@ -100,7 +100,7 @@ class ConferenceService
             'api_key_sid_prefix' => substr($apiKeySid, 0, 6).'...',
             'api_key_secret_set' => ! empty($apiKeySecret),
             'twiml_app_sid_prefix' => $twimlAppSid ? substr($twimlAppSid, 0, 6).'...' : 'NOT SET',
-            'credential_source' => $twilioAccount->api_key_sid ? 'database' : 'config',
+            'credential_source' => 'database',
         ]);
 
         return $token->toJWT();
@@ -138,7 +138,7 @@ class ConferenceService
             'statusCallback' => route('prospector.webhook.twilio.voice.status'),
             'statusCallbackMethod' => 'POST',
             'statusCallbackEvent' => ['initiated', 'ringing', 'answered', 'completed'],
-            'timeout' => config('prospector.defaults.ring_timeout_seconds', 30),
+            'timeout' => app(SettingsService::class)->get('defaults.ring_timeout_seconds', 30),
         ];
 
         $participantParams = array_merge($participantParams, $amdParams);

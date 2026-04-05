@@ -41,12 +41,12 @@ class TcpaComplianceService
         }
 
         if ($campaign && $this->hasExceededAttempts($contact, $campaign)) {
-            $maxAttempts = config('prospector.tcpa.max_attempts_per_contact', 3);
+            $maxAttempts = app(SettingsService::class)->get('tcpa.max_attempts_per_contact', 3);
             $reasons[] = "Contact has exceeded maximum dial attempts ({$maxAttempts}) for this campaign.";
         }
 
         if ($this->isWithinCooldown($contact)) {
-            $minHours = config('prospector.tcpa.min_hours_between_attempts', 4);
+            $minHours = app(SettingsService::class)->get('tcpa.min_hours_between_attempts', 4);
             $reasons[] = "Contact was called within the last {$minHours} hours (cooldown period).";
         }
 
@@ -79,8 +79,8 @@ class TcpaComplianceService
             $now = Carbon::now($company->timezone ?? 'America/Denver');
         }
 
-        $start = config('prospector.tcpa.calling_hours_start', '08:00');
-        $end = config('prospector.tcpa.calling_hours_end', '21:00');
+        $start = app(SettingsService::class)->get('tcpa.calling_hours_start', '08:00');
+        $end = app(SettingsService::class)->get('tcpa.calling_hours_end', '21:00');
 
         $startTime = Carbon::parse($start, $now->timezone);
         $endTime = Carbon::parse($end, $now->timezone);
@@ -93,7 +93,7 @@ class TcpaComplianceService
      */
     public function hasExceededAttempts(Contact $contact, Campaign $campaign): bool
     {
-        $maxAttempts = config('prospector.tcpa.max_attempts_per_contact', 3);
+        $maxAttempts = app(SettingsService::class)->get('tcpa.max_attempts_per_contact', 3);
 
         $entry = CampaignContact::where('campaign_id', $campaign->id)
             ->where('contact_id', $contact->id)
@@ -118,7 +118,7 @@ class TcpaComplianceService
             return false;
         }
 
-        $minHours = config('prospector.tcpa.min_hours_between_attempts', 4);
+        $minHours = app(SettingsService::class)->get('tcpa.min_hours_between_attempts', 4);
 
         return $contact->last_contacted_at->addHours($minHours)->isFuture();
     }

@@ -38,18 +38,14 @@ class TwilioVoiceController extends Controller
         $user = Auth::user();
         $requestedCompanyId = $request->query('company_id');
 
-        // Credentials can live in the DB (per-account) or fall back to config
-        $hasConfigCredentials = config('prospector.twilio.api_key_sid') && config('prospector.twilio.api_key_secret');
-
         if ($requestedCompanyId) {
-            // Specific company requested — must have an active Twilio account
+            // Specific company requested — must have an active Twilio account with credentials
             $company = Company::where('id', $requestedCompanyId)
                 ->where('is_active', true)
-                ->whereHas('twilioAccount', function ($q) use ($hasConfigCredentials) {
-                    $q->where('is_active', true);
-                    if (! $hasConfigCredentials) {
-                        $q->whereNotNull('api_key_sid')->whereNotNull('api_key_secret');
-                    }
+                ->whereHas('twilioAccount', function ($q) {
+                    $q->where('is_active', true)
+                        ->whereNotNull('api_key_sid')
+                        ->whereNotNull('api_key_secret');
                 })
                 ->first();
 
@@ -59,7 +55,7 @@ class TwilioVoiceController extends Controller
                 ], 422);
             }
         } else {
-            // Find company with DB credentials first, then any with active account (config fallback)
+            // Find company with DB credentials
             $company = Company::where('is_active', true)
                 ->whereHas('twilioAccount', function ($q) {
                     $q->whereNotNull('api_key_sid')
@@ -67,12 +63,6 @@ class TwilioVoiceController extends Controller
                         ->where('is_active', true);
                 })
                 ->first();
-
-            if (! $company && $hasConfigCredentials) {
-                $company = Company::where('is_active', true)
-                    ->whereHas('twilioAccount', fn ($q) => $q->where('is_active', true))
-                    ->first();
-            }
         }
 
         if (! $company) {

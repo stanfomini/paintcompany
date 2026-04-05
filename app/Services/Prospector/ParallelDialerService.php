@@ -371,7 +371,7 @@ class ParallelDialerService
      */
     private function applyRateLimit(int $companyId): void
     {
-        $callsPerSecond = config('prospector.rate_limits.calls_per_second', 1);
+        $callsPerSecond = app(SettingsService::class)->get('rate_limits.calls_per_second', 1);
 
         if ($callsPerSecond <= 0) {
             return;

@@ -23,10 +23,10 @@ beforeEach(function () {
 // ──────────────────────────────────────
 
 it('returns a voice token for authenticated internal user', function () {
-    config([
-        'prospector.twilio.api_key_sid' => 'SK_test_key_sid',
-        'prospector.twilio.api_key_secret' => 'test_api_key_secret_value_32ch',
-        'prospector.twilio.twiml_app_sid' => 'AP_test_twiml_app_sid',
+    $this->account->update([
+        'api_key_sid' => 'SK_test_key_sid',
+        'api_key_secret' => 'test_api_key_secret_value_32ch',
+        'twiml_app_sid' => 'AP_test_twiml_app_sid',
     ]);
 
     $response = $this->actingAs($this->user)

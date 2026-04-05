@@ -23,7 +23,7 @@ class AmdService
      */
     public function getAmdParams(): array
     {
-        if (! config('prospector.defaults.amd_enabled', true)) {
+        if (! app(SettingsService::class)->get('defaults.amd_enabled', true)) {
             return [];
         }
 

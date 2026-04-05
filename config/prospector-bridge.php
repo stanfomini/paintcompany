@@ -4,18 +4,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Model Bridge Enabled
-    |--------------------------------------------------------------------------
-    |
-    | Toggle the model bridge feature on/off. When disabled, no observers
-    | are registered and sync does not run.
-    |
-    */
-
-    'enabled' => env('PROSPECTOR_BRIDGE_ENABLED', false),
-
-    /*
-    |--------------------------------------------------------------------------
     | Company Model Mapping
     |--------------------------------------------------------------------------
     |
