@@ -281,6 +281,9 @@
                     <flux:sidebar.item icon="cog-6-tooth" :href="route('prospector.settings')" :current="request()->routeIs('prospector.settings')" wire:navigate>
                         {{ __('Settings') }}
                     </flux:sidebar.item>
+                    <flux:sidebar.item icon="arrow-path-rounded-square" :href="route('prospector.settings.integrations')" :current="request()->routeIs('prospector.settings.integrations')" wire:navigate>
+                        {{ __('Integrations') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
 
                 @canany(['settings.company', 'team.manage_roles'])

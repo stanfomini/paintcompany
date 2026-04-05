@@ -34,6 +34,9 @@ class extends Component
     public string $sourceFilter = '';
 
     #[Url]
+    public string $campaignFilter = '';
+
+    #[Url]
     public string $sortBy = 'name';
 
     #[Url]
@@ -100,7 +103,8 @@ class extends Component
             ->when($this->companyFilter, fn ($q) => $q->where('company_id', $this->companyFilter))
             ->when($this->dncFilter === '1', fn ($q) => $q->where('do_not_call', true))
             ->when($this->dncFilter === '0', fn ($q) => $q->where('do_not_call', false))
-            ->when($this->sourceFilter, fn ($q) => $q->where('source', $this->sourceFilter));
+            ->when($this->sourceFilter, fn ($q) => $q->where('source', $this->sourceFilter))
+            ->when($this->campaignFilter, fn ($q) => $q->whereHas('campaignEntries', fn ($cq) => $cq->where('campaign_id', $this->campaignFilter)));
 
         match ($this->sortBy) {
             'name' => $query->orderBy('first_name', $this->sortDir)->orderBy('last_name', $this->sortDir),
@@ -116,6 +120,12 @@ class extends Component
     public function companies(): \Illuminate\Support\Collection
     {
         return Company::query()->orderBy('name')->get();
+    }
+
+    #[Computed]
+    public function activeCampaigns(): \Illuminate\Support\Collection
+    {
+        return Campaign::where('status', 'active')->orderBy('name')->get();
     }
 
     #[Computed]
@@ -178,6 +188,7 @@ class extends Component
         $this->companyFilter = '';
         $this->dncFilter = '';
         $this->sourceFilter = '';
+        $this->campaignFilter = '';
         $this->resetPage();
     }
 
@@ -761,6 +772,7 @@ class extends Component
             ->when($this->dncFilter === '1', fn ($q) => $q->where('do_not_call', true))
             ->when($this->dncFilter === '0', fn ($q) => $q->where('do_not_call', false))
             ->when($this->sourceFilter, fn ($q) => $q->where('source', $this->sourceFilter))
+            ->when($this->campaignFilter, fn ($q) => $q->whereHas('campaignEntries', fn ($cq) => $cq->where('campaign_id', $this->campaignFilter)))
             ->orderBy('first_name')
             ->orderBy('last_name');
 
@@ -911,7 +923,14 @@ class extends Component
             </flux:select>
         @endif
 
-        @if ($search || $companyFilter || $dncFilter || $sourceFilter)
+        <flux:select wire:model.live="campaignFilter" class="w-48" placeholder="{{ __('All Campaigns') }}">
+            <flux:select.option value="">{{ __('All Campaigns') }}</flux:select.option>
+            @foreach ($this->activeCampaigns as $campaign)
+                <flux:select.option value="{{ $campaign->id }}">{{ $campaign->name }}</flux:select.option>
+            @endforeach
+        </flux:select>
+
+        @if ($search || $companyFilter || $dncFilter || $sourceFilter || $campaignFilter)
             <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="clearFilters">
                 {{ __('Clear') }}
             </flux:button>
