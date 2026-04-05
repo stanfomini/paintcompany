@@ -48,6 +48,13 @@ class SettingsService
         'ai.xai_api_key' => ['value' => '', 'type' => 'encrypted'],
         'ai.xai_voice' => ['value' => 'ara', 'type' => 'string'],
         'ai.laravel_callback_url' => ['value' => '', 'type' => 'string'],
+
+        // Model Bridge mappings
+        'bridge.company_model' => ['value' => '', 'type' => 'string'],
+        'bridge.company_fields' => ['value' => '{}', 'type' => 'json'],
+        'bridge.contact_model' => ['value' => '', 'type' => 'string'],
+        'bridge.contact_company_key' => ['value' => '', 'type' => 'string'],
+        'bridge.contact_fields' => ['value' => '{}', 'type' => 'json'],
     ];
 
     /**

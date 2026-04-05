@@ -21,7 +21,7 @@ class ModelBridgeService
      */
     public function importFromHost(Model $hostModel, string $prospectorType): ?Model
     {
-        $config = config("prospector-bridge.{$prospectorType}");
+        $config = self::getBridgeConfig($prospectorType);
 
         if (! $config || ! $config['model']) {
             return null;
@@ -72,7 +72,7 @@ class ModelBridgeService
      */
     public function exportToHost(Model $prospectorModel, string $prospectorType): ?Model
     {
-        $config = config("prospector-bridge.{$prospectorType}");
+        $config = self::getBridgeConfig($prospectorType);
 
         if (! $config || ! $config['model']) {
             return null;
@@ -190,7 +190,7 @@ class ModelBridgeService
         $companyKey = $config['company_key'] ?? null;
         if ($companyKey && $hostModel->getAttribute($companyKey)) {
             $companyMap = ExternalIdMap::where('prospector_type', 'company')
-                ->where('external_model', config('prospector-bridge.companies.model'))
+                ->where('external_model', self::getBridgeConfig('companies')['model'] ?? '')
                 ->where('external_id', $hostModel->getAttribute($companyKey))
                 ->first();
 
@@ -233,7 +233,36 @@ class ModelBridgeService
      */
     public static function isConfigured(string $type = 'companies'): bool
     {
-        return app(\App\Services\Prospector\SettingsService::class)->get('bridge_enabled', false)
-            && config("prospector-bridge.{$type}.model") !== null;
+        $settings = app(SettingsService::class);
+
+        return $settings->get('bridge_enabled', false)
+            && ! empty(self::getBridgeConfig($type)['model']);
+    }
+
+    /**
+     * Get bridge configuration for a type from the database.
+     *
+     * @return array{model: ?string, fields: array, company_key?: ?string}
+     */
+    public static function getBridgeConfig(string $type): array
+    {
+        $settings = app(SettingsService::class);
+
+        if ($type === 'companies') {
+            return [
+                'model' => $settings->get('bridge.company_model') ?: null,
+                'fields' => $settings->get('bridge.company_fields') ?: [],
+            ];
+        }
+
+        if ($type === 'contacts') {
+            return [
+                'model' => $settings->get('bridge.contact_model') ?: null,
+                'company_key' => $settings->get('bridge.contact_company_key') ?: null,
+                'fields' => $settings->get('bridge.contact_fields') ?: [],
+            ];
+        }
+
+        return ['model' => null, 'fields' => []];
     }
 }

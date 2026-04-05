@@ -129,14 +129,14 @@ class AppServiceProvider extends ServiceProvider
             }
 
             // Host model → Prospector sync (import direction)
-            $companyModel = config('prospector-bridge.companies.model');
-            if ($companyModel && class_exists($companyModel)) {
-                $companyModel::observe(new \App\Observers\Prospector\HostModelObserver('companies'));
+            $companyConfig = \App\Services\Prospector\ModelBridgeService::getBridgeConfig('companies');
+            if (! empty($companyConfig['model']) && class_exists($companyConfig['model'])) {
+                $companyConfig['model']::observe(new \App\Observers\Prospector\HostModelObserver('companies'));
             }
 
-            $contactModel = config('prospector-bridge.contacts.model');
-            if ($contactModel && class_exists($contactModel)) {
-                $contactModel::observe(new \App\Observers\Prospector\HostModelObserver('contacts'));
+            $contactConfig = \App\Services\Prospector\ModelBridgeService::getBridgeConfig('contacts');
+            if (! empty($contactConfig['model']) && class_exists($contactConfig['model'])) {
+                $contactConfig['model']::observe(new \App\Observers\Prospector\HostModelObserver('contacts'));
             }
 
             // Prospector → host model sync (export direction)
