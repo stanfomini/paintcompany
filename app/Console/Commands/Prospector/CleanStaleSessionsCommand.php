@@ -17,8 +17,8 @@ class CleanStaleSessionsCommand extends Command
     {
         $count = 0;
 
-        // End sessions that have been "active" for more than 2 hours
-        $staleSessions = DialerSession::where('status', 'active')
+        // End sessions that have been active/paused for more than 2 hours
+        $staleSessions = DialerSession::whereIn('status', ['active', 'paused'])
             ->where('created_at', '<', now()->subHours(2))
             ->get();
 

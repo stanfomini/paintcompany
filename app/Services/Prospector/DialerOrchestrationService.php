@@ -50,6 +50,17 @@ class DialerOrchestrationService
      */
     public function startSession(Agent $agent, Campaign $campaign): DialerSession
     {
+        // End any existing active/paused sessions for this agent
+        DialerSession::where('agent_id', $agent->id)
+            ->whereIn('status', ['active', 'paused'])
+            ->each(function (DialerSession $old) {
+                $old->update(['status' => 'ended', 'ended_at' => now()]);
+
+                Log::info('DialerOrchestration: ended stale session before starting new one', [
+                    'old_session_id' => $old->id,
+                ]);
+            });
+
         $session = DialerSession::create([
             'agent_id' => $agent->id,
             'campaign_id' => $campaign->id,
