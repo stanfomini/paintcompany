@@ -25,7 +25,7 @@ class extends Component
     #[Computed]
     public function bridgeEnabled(): bool
     {
-        return config('prospector-bridge.enabled', false);
+        return app(\App\Services\Prospector\SettingsService::class)->get('bridge_enabled', false);
     }
 
     #[Computed]
@@ -96,7 +96,7 @@ class extends Component
         <div class="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center dark:border-amber-800 dark:bg-amber-900/20">
             <flux:icon name="exclamation-triangle" class="mx-auto mb-2 size-8 text-amber-500" />
             <p class="text-sm text-amber-800 dark:text-amber-300">
-                Model Bridge is disabled. Set <code class="rounded bg-amber-100 px-1 py-0.5 font-mono text-xs dark:bg-amber-800">PROSPECTOR_BRIDGE_ENABLED=true</code> in your <code>.env</code> file and configure your models in <code>config/prospector-bridge.php</code>.
+                Model Bridge is disabled. Enable it in <a href="{{ route('prospector.settings') }}" class="font-medium underline">Settings &rarr; AI Service</a> and configure your models in <code class="rounded bg-amber-100 px-1 py-0.5 font-mono text-xs dark:bg-amber-800">config/prospector-bridge.php</code>.
             </p>
         </div>
     @else

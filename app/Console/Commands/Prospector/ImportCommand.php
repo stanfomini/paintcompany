@@ -33,8 +33,8 @@ class ImportCommand extends Command
             return self::FAILURE;
         }
 
-        if (! config('prospector-bridge.enabled', false)) {
-            $this->error('Model Bridge is disabled. Set PROSPECTOR_BRIDGE_ENABLED=true in .env');
+        if (! app(\App\Services\Prospector\SettingsService::class)->get('bridge_enabled', false)) {
+            $this->error('Model Bridge is disabled. Enable it in Prospector Settings → AI Service.');
 
             return self::FAILURE;
         }

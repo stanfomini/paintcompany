@@ -233,7 +233,7 @@ class ModelBridgeService
      */
     public static function isConfigured(string $type = 'companies'): bool
     {
-        return config('prospector-bridge.enabled', false)
+        return app(\App\Services\Prospector\SettingsService::class)->get('bridge_enabled', false)
             && config("prospector-bridge.{$type}.model") !== null;
     }
 }
