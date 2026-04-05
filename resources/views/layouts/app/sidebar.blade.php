@@ -275,10 +275,7 @@
                     <flux:sidebar.item icon="clock" :href="route('prospector.call-history')" :current="request()->routeIs('prospector.call-history')" wire:navigate>
                         {{ __('Call History') }}
                     </flux:sidebar.item>
-                    <flux:sidebar.item icon="adjustments-horizontal" :href="route('prospector.pipelines')" :current="request()->routeIs('prospector.pipelines')" wire:navigate>
-                        {{ __('Pipeline Settings') }}
-                    </flux:sidebar.item>
-                    <flux:sidebar.item icon="cog-6-tooth" :href="route('prospector.settings')" :current="request()->routeIs('prospector.settings')" wire:navigate>
+<flux:sidebar.item icon="cog-6-tooth" :href="route('prospector.settings')" :current="request()->routeIs('prospector.settings')" wire:navigate>
                         {{ __('Settings') }}
                     </flux:sidebar.item>
                     <flux:sidebar.item icon="arrow-path-rounded-square" :href="route('prospector.settings.integrations')" :current="request()->routeIs('prospector.settings.integrations')" wire:navigate>

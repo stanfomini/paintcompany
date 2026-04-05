@@ -45,10 +45,6 @@ Route::middleware(['auth:web', 'auth.internal'])->group(function () {
     // AI Call Intelligence
     Route::livewire('/call-intelligence', 'pages::prospector.call-intelligence')->name('call-intelligence');
 
-    // Pipelines
-    Route::livewire('/pipelines', 'pages::prospector.pipelines')->name('pipelines');
-    Route::livewire('/pipeline-view', 'pages::prospector.pipeline-view')->name('pipeline-view');
-
     // Ringless Voicemail
     Route::livewire('/rvm', 'pages::prospector.rvm-manager')->name('rvm');
 
