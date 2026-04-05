@@ -311,6 +311,8 @@ class extends Component
     }
 }; ?>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+
 <div
     x-data="{
         charts: {},
@@ -327,6 +329,7 @@ class extends Component
         },
 
         async renderBuilderChart() {
+            if (typeof Chart === 'undefined') return;
             const data = await $wire.getChartData();
             if (this.builderChart) this.builderChart.destroy();
             const canvas = this.$refs.builderCanvas;
@@ -359,6 +362,7 @@ class extends Component
         },
 
         async renderSavedChart(chartId, canvasRef, chartType) {
+            if (typeof Chart === 'undefined') return;
             const data = await $wire.getSavedChartData(chartId);
             if (this.charts[chartId]) this.charts[chartId].destroy();
             const type = this.resolveChartType(chartType);
@@ -382,15 +386,31 @@ class extends Component
         },
 
         init() {
+            // Wait for Chart.js to be available, then render
+            const waitForChartJs = () => {
+                if (typeof Chart !== 'undefined') {
+                    if ($wire.tab === 'builder') {
+                        this.renderBuilderChart();
+                    }
+                } else {
+                    setTimeout(waitForChartJs, 100);
+                }
+            };
+            $nextTick(() => waitForChartJs());
+
             $watch('$wire.chartMetric', () => this.renderBuilderChart());
             $watch('$wire.chartDimension', () => this.renderBuilderChart());
             $watch('$wire.chartGroupBy', () => this.renderBuilderChart());
             $watch('$wire.chartType', () => this.renderBuilderChart());
             $watch('$wire.dateRange', () => this.renderBuilderChart());
+            $watch('$wire.tab', (val) => {
+                if (val === 'builder') {
+                    $nextTick(() => this.renderBuilderChart());
+                }
+            });
         }
     }"
 >
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 
     <div class="space-y-6">
         {{-- Header --}}
@@ -622,7 +642,7 @@ class extends Component
                             </flux:button>
                         </div>
 
-                        <div class="h-80" x-init="$nextTick(() => renderBuilderChart())">
+                        <div class="relative h-80">
                             <canvas x-ref="builderCanvas"></canvas>
                         </div>
 
