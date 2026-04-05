@@ -204,12 +204,8 @@ class extends Component
         try {
             config(["ai.providers.{$ai->provider}.key" => $ai->api_key]);
 
-            $response = \Laravel\Ai\Facades\Ai::text(
-                provider: $ai->provider,
-                model: $ai->model,
-                prompt: 'Reply with exactly: OK',
-                maxTokens: 10,
-            );
+            $agent = new \Laravel\Ai\AnonymousAgent('Reply with exactly: OK', [], []);
+            $response = $agent->prompt('Reply with exactly: OK', provider: $ai->provider, model: $ai->model);
 
             $this->aiTestResult = [
                 'success' => true,
