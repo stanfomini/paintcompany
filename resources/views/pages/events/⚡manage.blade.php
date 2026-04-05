@@ -2519,16 +2519,43 @@ class extends Component
 
                 async toggleScreenShare() {
                     if (this.screenStream) {
+                        // Stop screen share and unpublish audio if it was published
                         this.screenStream.getTracks().forEach(t => t.stop());
                         this.screenStream = null;
                         if (sourceManager) sourceManager.removeSource('screen');
+                        // Unpublish screen audio from LiveKit
+                        if (room) {
+                            const pubs = Array.from(room.localParticipant.trackPublications.values());
+                            for (const pub of pubs) {
+                                if (pub.trackName === 'screen-audio') {
+                                    await room.localParticipant.unpublishTrack(pub.track);
+                                }
+                            }
+                        }
                         return;
                     }
 
                     try {
-                        this.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                        this.screenStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+                            audio: true,
+                            preferCurrentTab: false,
+                        });
+
+                        // Add video to SourceManager for compositor
                         if (sourceManager) {
-                            sourceManager.addSource('screen', this.screenStream, 'Screen Share');
+                            const videoOnly = new MediaStream(this.screenStream.getVideoTracks());
+                            sourceManager.addSource('screen', videoOnly, 'Screen Share');
+                        }
+
+                        // Publish screen audio to LiveKit so viewers hear it
+                        const screenAudio = this.screenStream.getAudioTracks()[0];
+                        if (screenAudio && room) {
+                            await room.localParticipant.publishTrack(screenAudio, {
+                                name: 'screen-audio',
+                                source: 'screen_share_audio',
+                            });
+                            console.log('[Studio] Screen share audio published');
                         }
 
                         this.screenStream.getVideoTracks()[0].addEventListener('ended', () => {
