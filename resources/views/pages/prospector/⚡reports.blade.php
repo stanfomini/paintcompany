@@ -398,33 +398,66 @@ class extends Component
         async renderSavedChart(chartId, canvasRef, chartType) {
             if (typeof Chart === 'undefined') return;
             const data = await $wire.getSavedChartData(chartId);
+            if (!data || !data.labels) return;
             if (this.charts[chartId]) this.charts[chartId].destroy();
             const type = this.resolveChartType(chartType);
+            const isPieType = (type === 'pie' || type === 'doughnut');
+            const isSingleDataset = data.datasets.length === 1;
+
+            const datasets = data.datasets.map((ds, i) => {
+                if (isSingleDataset || isPieType) {
+                    return {
+                        ...ds,
+                        backgroundColor: ds.data.map((_, j) => this.colors[j % this.colors.length] + '99'),
+                        borderColor: ds.data.map((_, j) => this.colors[j % this.colors.length]),
+                        borderWidth: 2,
+                    };
+                }
+                return {
+                    ...ds,
+                    backgroundColor: type === 'line' ? 'transparent' : (this.colors[i % this.colors.length] + '99'),
+                    borderColor: this.colors[i % this.colors.length],
+                    borderWidth: 2,
+                };
+            });
+
             this.charts[chartId] = new Chart(canvasRef, {
                 type: type,
-                data: {
-                    labels: data.labels,
-                    datasets: data.datasets.map((ds, i) => ({
-                        ...ds,
-                        backgroundColor: this.colors[i % this.colors.length] + '99',
-                        borderColor: this.colors[i % this.colors.length],
-                        borderWidth: 2,
-                    }))
-                },
+                data: { labels: data.labels, datasets: datasets },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: data.datasets.length > 1 } }
+                    plugins: {
+                        legend: { display: data.datasets.length > 1 || isPieType },
+                        tooltip: { enabled: true },
+                    },
+                    scales: isPieType ? {} : {
+                        y: { beginAtZero: true },
+                        x: {}
+                    }
+                }
+            });
+        },
+
+        renderDashboardCharts() {
+            document.querySelectorAll('[data-saved-chart-id]').forEach(el => {
+                const chartId = parseInt(el.dataset.savedChartId);
+                const chartType = el.dataset.savedChartType || 'bar';
+                const canvas = el.querySelector('canvas');
+                if (canvas && !this.charts[chartId]) {
+                    this.renderSavedChart(chartId, canvas, chartType);
                 }
             });
         },
 
         init() {
-            // Wait for Chart.js CDN to load, then render initial chart
+            // Wait for Chart.js CDN to load, then render current tab
             const waitForChartJs = (attempts = 0) => {
                 if (typeof Chart !== 'undefined') {
                     if ($wire.tab === 'builder') {
                         this.renderBuilderChart();
+                    } else if ($wire.tab === 'dashboard') {
+                        this.renderDashboardCharts();
                     }
                 } else if (attempts < 50) {
                     setTimeout(() => waitForChartJs(attempts + 1), 200);
@@ -447,6 +480,8 @@ class extends Component
             $watch('$wire.tab', (val) => {
                 if (val === 'builder') {
                     $nextTick(() => this.renderBuilderChart());
+                } else if (val === 'dashboard') {
+                    $nextTick(() => this.renderDashboardCharts());
                 }
             });
         }
@@ -506,7 +541,8 @@ class extends Component
                     @foreach ($this->savedCharts as $chart)
                         <div
                             class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900"
-                            x-init="$nextTick(() => renderSavedChart({{ $chart->id }}, $refs['chart_{{ $chart->id }}'], '{{ $chart->config['chart_type'] ?? 'bar' }}'))"
+                            data-saved-chart-id="{{ $chart->id }}"
+                            data-saved-chart-type="{{ $chart->config['chart_type'] ?? 'bar' }}"
                         >
                             <div class="mb-3 flex items-center justify-between">
                                 <flux:heading size="sm">{{ $chart->name }}</flux:heading>
@@ -517,7 +553,7 @@ class extends Component
                                 </div>
                             </div>
                             <div class="h-64">
-                                <canvas x-ref="chart_{{ $chart->id }}"></canvas>
+                                <canvas></canvas>
                             </div>
                         </div>
                     @endforeach
