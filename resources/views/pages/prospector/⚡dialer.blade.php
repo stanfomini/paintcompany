@@ -3134,7 +3134,8 @@ class extends Component
                                             class="flex-1 rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-zinc-700 dark:text-zinc-100"
                                         />
                                         <flux:button size="sm" variant="primary"
-                                            x-on:click="$wire.submitDisposition('callback', callbackDate).then(() => { showCallbackPicker = false; if (window.__dialerSession?.isActive) window.__dialerSession.onDispositioned(); })">
+                                            x-on:click="$wire.submitDisposition('callback', $wire.callbackDate).then(() => { showCallbackPicker = false; if (window.__dialerSession?.isActive) window.__dialerSession.onDispositioned(); })"
+                                            x-bind:disabled="!$wire.callbackDate">
                                             Schedule
                                         </flux:button>
                                     </div>
@@ -3217,7 +3218,9 @@ class extends Component
                                         wire:model="callbackDate"
                                         class="flex-1 rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-zinc-700 dark:text-zinc-100"
                                     />
-                                    <flux:button size="sm" variant="primary" wire:click="quickDisposition('callback', callbackDate)" x-on:click="showCallbackPicker = false">
+                                    <flux:button size="sm" variant="primary"
+                                        x-on:click="$wire.quickDisposition('callback', $wire.callbackDate).then(() => { showCallbackPicker = false; })"
+                                        x-bind:disabled="!$wire.callbackDate">
                                         Schedule
                                     </flux:button>
                                 </div>
