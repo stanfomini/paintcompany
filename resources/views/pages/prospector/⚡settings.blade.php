@@ -62,6 +62,10 @@ class extends Component
     public bool $aiEnabled = false;
     public ?array $aiTestResult = null;
 
+    // Automation
+    public ?int $automationCompanyId = null;
+    public array $defaultSequences = [];
+
     public function mount(): void
     {
         $ai = AiSetting::current();
@@ -182,6 +186,43 @@ class extends Component
     public function dismissAiTestResult(): void
     {
         $this->aiTestResult = null;
+    }
+
+    public function loadAutomationSettings(): void
+    {
+        if (! $this->automationCompanyId) {
+            $this->defaultSequences = [];
+
+            return;
+        }
+
+        $company = Company::find($this->automationCompanyId);
+        $this->defaultSequences = $company?->default_disposition_sequences ?? [];
+    }
+
+    public function saveDefaultSequences(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $company = Company::findOrFail($this->automationCompanyId);
+        $filtered = array_filter($this->defaultSequences, fn ($v) => ! empty($v));
+        $company->update(['default_disposition_sequences' => $filtered ?: null]);
+        session()->flash('automation-saved', __('Default sequences saved.'));
+    }
+
+    #[Computed]
+    public function automationSequences(): \Illuminate\Support\Collection
+    {
+        if (! $this->automationCompanyId) {
+            return collect();
+        }
+
+        return \App\Models\Prospector\Sequence::where('company_id', $this->automationCompanyId)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
     }
 
     public function openCreateServiceModal(): void
@@ -535,6 +576,16 @@ class extends Component
             ])
         >
             {{ __('AI Intelligence') }}
+        </button>
+        <button
+            wire:click="$set('activeTab', 'automation')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'automation',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'automation',
+            ])
+        >
+            {{ __('Automation') }}
         </button>
     </div>
 
@@ -926,6 +977,58 @@ class extends Component
                     @endif
                 </div>
             </div>
+        </div>
+    @endif
+
+    @if ($activeTab === 'automation')
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Sequence Automation') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Map dispositions to sequences. When an agent clicks a disposition, the contact auto-enrolls in the mapped sequence. Individual campaigns can override these defaults.') }}</flux:text>
+            </div>
+
+            <div class="max-w-xs">
+                <flux:select wire:model="automationCompanyId" wire:change="loadAutomationSettings" :label="__('Company')">
+                    <flux:select.option value="">{{ __('Select company...') }}</flux:select.option>
+                    @foreach($this->companies as $company)
+                        <flux:select.option :value="$company->id">{{ $company->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
+
+            @if($automationCompanyId)
+                <div class="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+                    <flux:heading size="sm" class="mb-4">{{ __('Default Disposition → Sequence Mapping') }}</flux:heading>
+
+                    <div class="space-y-3">
+                        @foreach(config('prospector.dispositions', []) as $key => $config)
+                            <div class="flex items-center gap-4" wire:key="auto-{{ $key }}">
+                                <div class="w-40 text-sm font-medium">
+                                    {{ $config['label'] ?? ucfirst(str_replace('_', ' ', $key)) }}
+                                </div>
+                                <select
+                                    wire:model.live="defaultSequences.{{ $key }}"
+                                    class="w-64 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                                >
+                                    <option value="">{{ __('None') }}</option>
+                                    @foreach($this->automationSequences as $seq)
+                                        <option value="{{ $seq->id }}">{{ $seq->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <div class="mt-5 flex items-center gap-3">
+                        <flux:button wire:click="saveDefaultSequences" variant="primary" size="sm">
+                            {{ __('Save Defaults') }}
+                        </flux:button>
+                        @if(session('automation-saved'))
+                            <flux:text class="text-green-600 dark:text-green-400">{{ session('automation-saved') }}</flux:text>
+                        @endif
+                    </div>
+                </div>
+            @endif
         </div>
     @endif
 
