@@ -403,11 +403,29 @@ class extends Component
         @endif
 
         {{-- Tab Navigation --}}
-        <flux:tabs wire:model.live="tab">
-            <flux:tab name="dashboard" icon="chart-bar-square">{{ __('Dashboard') }}</flux:tab>
-            <flux:tab name="builder" icon="wrench-screwdriver">{{ __('Chart Builder') }}</flux:tab>
-            <flux:tab name="archive" icon="archive-box">{{ __('Archive') }}</flux:tab>
-        </flux:tabs>
+        <div class="flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
+            <button
+                wire:click="$set('tab', 'dashboard')"
+                class="flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition {{ $tab === 'dashboard' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' }}"
+            >
+                <flux:icon name="chart-bar-square" variant="micro" />
+                {{ __('Dashboard') }}
+            </button>
+            <button
+                wire:click="$set('tab', 'builder')"
+                class="flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition {{ $tab === 'builder' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' }}"
+            >
+                <flux:icon name="wrench-screwdriver" variant="micro" />
+                {{ __('Chart Builder') }}
+            </button>
+            <button
+                wire:click="$set('tab', 'archive')"
+                class="flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition {{ $tab === 'archive' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' }}"
+            >
+                <flux:icon name="archive-box" variant="micro" />
+                {{ __('Archive') }}
+            </button>
+        </div>
 
         {{-- ═══════════════════════════════════════════════════════════════ --}}
         {{-- Tab 1: Dashboard --}}
