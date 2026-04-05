@@ -42,6 +42,9 @@ class extends Component
     // Wait config
     public int $waitValue = 1;
     public string $waitUnit = 'days';
+    // RVM config
+    public ?int $rvmTemplateId = null;
+    public string $rvmMethod = 'slybroadcast';
     // Condition config
     public string $condField = 'last_disposition';
     public string $condOperator = 'equals';
@@ -117,6 +120,15 @@ class extends Component
     }
 
     #[Computed]
+    public function rvmTemplates(): \Illuminate\Support\Collection
+    {
+        return \App\Models\Prospector\RvmTemplate::where('company_id', $this->sequence->company_id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+    }
+
+    #[Computed]
     public function activeEnrollmentCount(): int
     {
         return SequenceEnrollment::where('sequence_id', $this->sequenceId)
@@ -147,6 +159,7 @@ class extends Component
         match ($step->type) {
             'sms' => $this->fillSmsConfig($config),
             'email' => $this->fillEmailConfig($config),
+            'rvm' => $this->fillRvmConfig($config),
             'call' => $this->callScript = $config['script'] ?? '',
             'wait' => $this->fillWaitConfig($step),
             'condition' => $this->fillConditionConfig($config),
@@ -328,7 +341,10 @@ class extends Component
                 'subject' => $this->emailSubject,
                 'template' => $this->emailBody,
             ],
-            'rvm' => ['audio_file_id' => null],
+            'rvm' => array_filter([
+                'rvm_template_id' => $this->rvmTemplateId,
+                'rvm_method' => $this->rvmMethod ?: null,
+            ]),
             'call' => ['script' => $this->callScript],
             'wait' => [],
             'condition' => [
@@ -358,6 +374,12 @@ class extends Component
         $this->waitUnit = $step->delay_unit ?? 'days';
     }
 
+    protected function fillRvmConfig(array $config): void
+    {
+        $this->rvmTemplateId = $config['rvm_template_id'] ?? null;
+        $this->rvmMethod = $config['rvm_method'] ?? 'slybroadcast';
+    }
+
     protected function fillConditionConfig(array $config): void
     {
         $this->condField = $config['field'] ?? 'last_disposition';
@@ -375,6 +397,8 @@ class extends Component
         $this->smsMediaUrl = '';
         $this->emailSubject = '';
         $this->emailBody = '';
+        $this->rvmTemplateId = null;
+        $this->rvmMethod = 'slybroadcast';
         $this->callScript = '';
         $this->waitValue = 1;
         $this->waitUnit = 'days';
@@ -388,7 +412,9 @@ class extends Component
         return match ($step->type) {
             'sms' => Str::limit($step->config['body'] ?? 'No message', 60),
             'email' => $step->config['subject'] ?? 'No subject',
-            'rvm' => 'Ringless voicemail drop',
+            'rvm' => $step->config['rvm_template_id']
+                ? 'RVM: '.(\App\Models\Prospector\RvmTemplate::find($step->config['rvm_template_id'])?->name ?? 'Unknown template')
+                : 'RVM (no template selected)',
             'call' => 'Add to call queue',
             'wait' => ($step->delay_value ?? 0).' '.($step->delay_unit ?? 'days'),
             'condition' => ($step->config['field'] ?? '').' '.($step->config['operator'] ?? '').' '.($step->config['value'] ?? ''),
@@ -715,10 +741,27 @@ class extends Component
                     @break
 
                 @case('rvm')
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
-                        <flux:text class="text-amber-700 dark:text-amber-400">
-                            {{ __('Ringless voicemail configuration will be available in Phase 8.') }}
-                        </flux:text>
+                    <div class="space-y-3">
+                        <flux:select wire:model="rvmTemplateId" :label="__('RVM Template')" required>
+                            <flux:select.option value="">{{ __('Select template...') }}</flux:select.option>
+                            @foreach($this->rvmTemplates as $tpl)
+                                <flux:select.option :value="$tpl->id">
+                                    {{ $tpl->name }}
+                                    @if($tpl->duration_seconds)
+                                        ({{ $tpl->duration_seconds }}s)
+                                    @endif
+                                </flux:select.option>
+                            @endforeach
+                        </flux:select>
+                        @if($this->rvmTemplates->isEmpty())
+                            <flux:text size="sm" class="text-amber-600 dark:text-amber-400">
+                                {{ __('No RVM templates found for this company. Upload one in the RVM Templates section first.') }}
+                            </flux:text>
+                        @endif
+                        <flux:select wire:model="rvmMethod" :label="__('Delivery Method')">
+                            <flux:select.option value="slybroadcast">{{ __('Slybroadcast (true ringless)') }}</flux:select.option>
+                            <flux:select.option value="twilio_amd">{{ __('Twilio AMD (brief ring)') }}</flux:select.option>
+                        </flux:select>
                     </div>
                     @break
 
