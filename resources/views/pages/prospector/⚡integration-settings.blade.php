@@ -248,14 +248,15 @@ class extends Component
             </div>
             <div class="space-y-3 p-4">
                 @foreach (\App\Models\Prospector\Company::where('is_active', true)->get() as $company)
+                    @php $webhookUrl = url('/prospector/webhook/' . $company->ulid . '/leads'); @endphp
                     <div class="rounded-md border border-zinc-100 p-3 dark:border-zinc-700">
                         <div class="mb-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ $company->name }}</div>
                         <div class="flex items-center gap-2">
                             <code class="flex-1 rounded bg-zinc-100 px-2 py-1 font-mono text-xs text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-                                POST {{ url("/prospector/webhook/{$company->ulid}/leads") }}
+                                POST {{ $webhookUrl }}
                             </code>
                             <flux:button size="xs" variant="ghost" icon="clipboard-document"
-                                x-on:click="navigator.clipboard.writeText('{{ url("/prospector/webhook/{$company->ulid}/leads") }}')"
+                                x-on:click="navigator.clipboard.writeText('{{ $webhookUrl }}')"
                                 title="Copy URL" />
                         </div>
                         <div class="mt-1 flex items-center gap-2">
