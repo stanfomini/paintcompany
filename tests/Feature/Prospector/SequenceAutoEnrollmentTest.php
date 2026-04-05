@@ -284,3 +284,49 @@ it('skips tag enrollment if already enrolled in sequence', function () {
     expect(SequenceEnrollment::where('contact_id', $this->contact->id)
         ->where('sequence_id', $this->sequence->id)->count())->toBe(1);
 });
+
+it('disposition button in dialer triggers sequence enrollment end-to-end', function () {
+    $company = Company::factory()->create([
+        'default_disposition_sequences' => [],
+    ]);
+    $contact = Contact::factory()->create(['company_id' => $company->id]);
+    $sequence = Sequence::factory()->create([
+        'company_id' => $company->id,
+        'status' => 'active',
+    ]);
+    SequenceStep::factory()->create([
+        'sequence_id' => $sequence->id,
+        'sort_order' => 0,
+        'type' => 'sms',
+        'config' => ['body' => 'Follow up'],
+    ]);
+    $campaign = Campaign::factory()->create([
+        'company_id' => $company->id,
+        'disposition_routes' => [
+            'no_answer' => ['action' => 'stay', 'target_sequence_id' => $sequence->id],
+        ],
+    ]);
+
+    $call = \App\Models\Prospector\Call::factory()->create([
+        'company_id' => $company->id,
+        'contact_id' => $contact->id,
+        'campaign_id' => $campaign->id,
+        'status' => 'in-progress',
+    ]);
+
+    \App\Models\Prospector\CampaignContact::create([
+        'campaign_id' => $campaign->id,
+        'contact_id' => $contact->id,
+        'status' => 'calling',
+        'entered_at' => now(),
+    ]);
+
+    $service = app(\App\Services\Prospector\DialerOrchestrationService::class);
+    $service->disposition($call, 'no_answer');
+
+    $enrollment = SequenceEnrollment::where('contact_id', $contact->id)
+        ->where('sequence_id', $sequence->id)->first();
+
+    expect($enrollment)->not->toBeNull()
+        ->and($enrollment->enrolled_via)->toBe('disposition');
+});
