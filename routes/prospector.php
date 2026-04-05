@@ -70,6 +70,8 @@ Route::prefix('webhook')->name('webhook.')->group(function () {
         ->name('twilio.amd');
     Route::post('/twilio/conference/status', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'conferenceStatus'])
         ->name('twilio.conference.status');
+    Route::post('/twilio/conference/recording', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'conferenceRecording'])
+        ->name('twilio.conference.recording');
 
     // Twilio SMS callbacks
     Route::post('/twilio/sms/incoming', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'incomingSms'])

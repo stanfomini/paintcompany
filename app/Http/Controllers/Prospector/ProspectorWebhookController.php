@@ -311,6 +311,69 @@ class ProspectorWebhookController extends Controller
             ]);
     }
 
+    /**
+     * POST /prospector/webhook/twilio/conference/recording
+     *
+     * Called when a conference recording completes. Attaches the recording
+     * to the most recent completed call in that conference.
+     */
+    public function conferenceRecording(Request $request): Response
+    {
+        $recordingUrl = $request->input('RecordingUrl');
+        $recordingSid = $request->input('RecordingSid');
+        $conferenceSid = $request->input('ConferenceSid');
+
+        Log::info('Conference recording callback', [
+            'conference_sid' => $conferenceSid,
+            'recording_sid' => $recordingSid,
+            'recording_url' => $recordingUrl,
+        ]);
+
+        if (! $recordingUrl || ! $conferenceSid) {
+            return response('', 200);
+        }
+
+        // Find the most recent call in this conference that doesn't have a recording
+        $call = Call::where('twilio_conference_sid', $conferenceSid)
+            ->whereNull('recording_url')
+            ->where('status', 'completed')
+            ->latest()
+            ->first();
+
+        if (! $call) {
+            // Try by conference name pattern
+            $call = Call::whereNotNull('twilio_conference_sid')
+                ->whereNull('recording_url')
+                ->where('status', 'completed')
+                ->latest()
+                ->first();
+        }
+
+        if ($call) {
+            $call->update([
+                'recording_url' => $recordingUrl.'.mp3',
+                'recording_sid' => $recordingSid,
+            ]);
+
+            Log::info('Conference recording attached to call', [
+                'call_id' => $call->id,
+                'recording_sid' => $recordingSid,
+            ]);
+
+            // Trigger AI intelligence if configured
+            $aiSettings = \App\Models\Prospector\AiSetting::current();
+            if ($aiSettings->isConfigured()) {
+                \App\Jobs\Prospector\ProcessCallIntelligenceJob::dispatch($call->fresh());
+            }
+        } else {
+            Log::warning('Conference recording: no matching call found', [
+                'conference_sid' => $conferenceSid,
+            ]);
+        }
+
+        return response('', 200);
+    }
+
     public function conferenceStatus(Request $request): Response
     {
         $conferenceName = $request->input('FriendlyName', '');

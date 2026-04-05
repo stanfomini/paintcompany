@@ -131,6 +131,9 @@ class TwilioVoiceController extends Controller
                 'startConferenceOnEnter' => true,
                 'endConferenceOnExit' => false,
                 'beep' => false,
+                'record' => 'record-from-answer',
+                'recordingStatusCallback' => route('prospector.webhook.twilio.conference.recording'),
+                'recordingStatusCallbackEvent' => 'completed',
                 'statusCallback' => route('prospector.webhook.twilio.conference.status'),
                 'statusCallbackEvent' => 'join leave end',
             ]);
