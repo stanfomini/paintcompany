@@ -247,10 +247,24 @@ class extends Component
             return;
         }
 
-        Artisan::queue('prospector:import', ['type' => $type]);
+        try {
+            $exitCode = Artisan::call('prospector:import', ['type' => $type]);
 
-        unset($this->recentImports);
-        $this->dispatch('notify', message: ucfirst($type) . ' import queued.');
+            unset($this->recentImports, $this->companySyncStats, $this->contactSyncStats);
+
+            if ($exitCode === 0) {
+                $this->dispatch('notify', message: ucfirst($type) . ' import started successfully.');
+            } else {
+                $this->dispatch('notify', message: ucfirst($type) . ' import failed. Check logs.', type: 'error');
+            }
+        } catch (\Exception $e) {
+            $this->dispatch('notify', message: 'Import error: ' . $e->getMessage(), type: 'error');
+        }
+    }
+
+    public function refreshStats(): void
+    {
+        unset($this->companySyncStats, $this->contactSyncStats, $this->recentImports);
     }
 }; ?>
 
@@ -292,13 +306,13 @@ class extends Component
                 </div>
                 @if ($this->companySyncStats['configured'])
                     <div class="flex items-center gap-3">
-                        <div class="text-right text-xs text-zinc-500">
+                        <div class="text-right text-xs text-zinc-500" wire:poll.10s="refreshStats">
                             <div>Host: <span class="font-bold text-zinc-900 dark:text-zinc-100">{{ $this->companySyncStats['host_count'] }}</span></div>
                             <div>Synced: <span class="font-bold text-green-600">{{ $this->companySyncStats['synced_count'] }}</span></div>
                         </div>
                         <flux:button size="sm" variant="primary" wire:click="runImport('companies')" wire:loading.attr="disabled">
                             <span wire:loading.remove wire:target="runImport('companies')">Import All</span>
-                            <span wire:loading wire:target="runImport('companies')">Queuing...</span>
+                            <span wire:loading wire:target="runImport('companies')">Importing...</span>
                         </flux:button>
                     </div>
                 @endif
@@ -403,7 +417,7 @@ class extends Component
                         </div>
                         <flux:button size="sm" variant="primary" wire:click="runImport('contacts')" wire:loading.attr="disabled">
                             <span wire:loading.remove wire:target="runImport('contacts')">Import All</span>
-                            <span wire:loading wire:target="runImport('contacts')">Queuing...</span>
+                            <span wire:loading wire:target="runImport('contacts')">Importing...</span>
                         </flux:button>
                     </div>
                 @endif

@@ -25,16 +25,16 @@ class ImportCommand extends Command
             return self::FAILURE;
         }
 
-        $config = config("prospector-bridge.{$type}");
-
-        if (! $config || ! $config['model']) {
-            $this->error("No model configured for {$type} in config/prospector-bridge.php");
+        if (! app(\App\Services\Prospector\SettingsService::class)->get('bridge_enabled', false)) {
+            $this->error('Model Bridge is disabled. Enable it in Prospector Settings.');
 
             return self::FAILURE;
         }
 
-        if (! app(\App\Services\Prospector\SettingsService::class)->get('bridge_enabled', false)) {
-            $this->error('Model Bridge is disabled. Enable it in Prospector Settings → AI Service.');
+        $config = \App\Services\Prospector\ModelBridgeService::getBridgeConfig($type);
+
+        if (! $config || ! $config['model']) {
+            $this->error("No model configured for {$type}. Set it in Prospector → Integrations.");
 
             return self::FAILURE;
         }
