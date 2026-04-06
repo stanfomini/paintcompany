@@ -12,44 +12,68 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Authenticated routes (internal users only)
-Route::middleware(['auth:web', 'auth.internal'])->group(function () {
+// First-run setup (only auth required, no agent record needed)
+Route::middleware(['auth:web', 'auth.internal', 'prospector.access'])->group(function () {
+    Route::livewire('/setup', 'pages::prospector.setup')->name('setup');
+});
+
+// Authenticated routes (internal users only) — gated by Prospector permissions
+Route::middleware(['auth:web', 'auth.internal', 'prospector.access'])->group(function () {
     // Dashboard
     Route::get('/', fn () => redirect()->route('prospector.dashboard'))->name('home');
     Route::livewire('/dashboard', 'pages::prospector.dashboard')->name('dashboard');
 
+    // Agents & Permissions Management
+    Route::livewire('/agents', 'pages::prospector.agents')->name('agents')
+        ->middleware('prospector.access:agents.view');
+
     // Settings (Twilio account connection)
-    Route::livewire('/settings', 'pages::prospector.settings')->name('settings');
+    Route::livewire('/settings', 'pages::prospector.settings')->name('settings')
+        ->middleware('prospector.access:settings.twilio');
 
     // Companies
-    Route::livewire('/companies', 'pages::prospector.companies')->name('companies');
-    Route::livewire('/companies/{companyId}', 'pages::prospector.company-detail')->name('companies.show');
+    Route::livewire('/companies', 'pages::prospector.companies')->name('companies')
+        ->middleware('prospector.access:companies.view');
+    Route::livewire('/companies/{companyId}', 'pages::prospector.company-detail')->name('companies.show')
+        ->middleware('prospector.access:companies.view');
 
     // Phone Numbers
-    Route::livewire('/phone-numbers', 'pages::prospector.phone-numbers')->name('phone-numbers');
+    Route::livewire('/phone-numbers', 'pages::prospector.phone-numbers')->name('phone-numbers')
+        ->middleware('prospector.access:settings.twilio');
 
     // Contacts & Campaigns
-    Route::livewire('/contacts', 'pages::prospector.contacts')->name('contacts');
-    Route::livewire('/reports', 'pages::prospector.reports')->name('reports');
-    Route::livewire('/campaigns', 'pages::prospector.campaigns')->name('campaigns');
-    Route::livewire('/campaigns/{campaignId}', 'pages::prospector.campaign-detail')->name('campaigns.show');
+    Route::livewire('/contacts', 'pages::prospector.contacts')->name('contacts')
+        ->middleware('prospector.access:contacts.view');
+    Route::livewire('/reports', 'pages::prospector.reports')->name('reports')
+        ->middleware('prospector.access:reports.view');
+    Route::livewire('/campaigns', 'pages::prospector.campaigns')->name('campaigns')
+        ->middleware('prospector.access:campaigns.view');
+    Route::livewire('/campaigns/{campaignId}', 'pages::prospector.campaign-detail')->name('campaigns.show')
+        ->middleware('prospector.access:campaigns.view');
 
     // Dialer
-    Route::livewire('/dialer', 'pages::prospector.dialer')->name('dialer');
-    Route::livewire('/call-history', 'pages::prospector.call-history')->name('call-history');
+    Route::livewire('/dialer', 'pages::prospector.dialer')->name('dialer')
+        ->middleware('prospector.access:dialer.use');
+    Route::livewire('/call-history', 'pages::prospector.call-history')->name('call-history')
+        ->middleware('prospector.access:recordings.listen');
 
     // Drip Sequences
-    Route::livewire('/sequences', 'pages::prospector.sequences')->name('sequences');
-    Route::livewire('/sequences/{sequenceId}', 'pages::prospector.sequence-builder')->name('sequences.show');
+    Route::livewire('/sequences', 'pages::prospector.sequences')->name('sequences')
+        ->middleware('prospector.access:sequences.view');
+    Route::livewire('/sequences/{sequenceId}', 'pages::prospector.sequence-builder')->name('sequences.show')
+        ->middleware('prospector.access:sequences.view');
 
     // AI Call Intelligence
-    Route::livewire('/call-intelligence', 'pages::prospector.call-intelligence')->name('call-intelligence');
+    Route::livewire('/call-intelligence', 'pages::prospector.call-intelligence')->name('call-intelligence')
+        ->middleware('prospector.access:recordings.intelligence');
 
     // Ringless Voicemail
-    Route::livewire('/rvm', 'pages::prospector.rvm-manager')->name('rvm');
+    Route::livewire('/rvm', 'pages::prospector.rvm-manager')->name('rvm')
+        ->middleware('prospector.access:rvm.view');
 
     // Integrations
-    Route::livewire('/settings/integrations', 'pages::prospector.integration-settings')->name('settings.integrations');
+    Route::livewire('/settings/integrations', 'pages::prospector.integration-settings')->name('settings.integrations')
+        ->middleware('prospector.access:settings.integrations');
 
     // Twilio Voice SDK token
     Route::get('/voice/token', [\App\Http\Controllers\Prospector\TwilioVoiceController::class, 'token'])->name('voice.token');

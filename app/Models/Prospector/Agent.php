@@ -20,6 +20,8 @@ class Agent extends Model
         'user_id',
         'company_id',
         'role',
+        'permissions',
+        'is_active',
         'status',
         'status_changed_at',
         'max_concurrent_lines',
@@ -38,6 +40,8 @@ class Agent extends Model
             'daily_call_count' => 'integer',
             'daily_talk_minutes' => 'integer',
             'settings' => 'array',
+            'permissions' => 'array',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -123,7 +127,7 @@ class Agent extends Model
      */
     public function isAdmin(): bool
     {
-        return $this->role === 'admin';
+        return $this->role === \App\Prospector\Permissions::ROLE_ADMIN;
     }
 
     /**
@@ -131,7 +135,10 @@ class Agent extends Model
      */
     public function isSupervisor(): bool
     {
-        return in_array($this->role, ['supervisor', 'admin']);
+        return in_array($this->role, [
+            \App\Prospector\Permissions::ROLE_ADMIN,
+            \App\Prospector\Permissions::ROLE_SUPERVISOR,
+        ]);
     }
 
     /**
@@ -140,6 +147,81 @@ class Agent extends Model
     public function isAgent(): bool
     {
         return true;
+    }
+
+    /**
+     * Get the agent record for the currently authenticated user.
+     */
+    public static function forCurrentUser(): ?self
+    {
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        if (! $user) {
+            return null;
+        }
+
+        return static::where('user_id', $user->id)
+            ->where('is_active', true)
+            ->first();
+    }
+
+    /**
+     * Check if any admin agent exists in the system.
+     */
+    public static function hasAnyAdmin(): bool
+    {
+        return static::where('role', \App\Prospector\Permissions::ROLE_ADMIN)
+            ->where('is_active', true)
+            ->exists();
+    }
+
+    /**
+     * Get the effective list of permissions for this agent.
+     * If permissions JSON is set, use it (custom overrides).
+     * Otherwise, fall back to role defaults.
+     *
+     * @return array<int, string>
+     */
+    public function effectivePermissions(): array
+    {
+        if (is_array($this->permissions) && ! empty($this->permissions)) {
+            return $this->permissions;
+        }
+
+        return \App\Prospector\Permissions::defaultsForRole($this->role ?? 'agent');
+    }
+
+    /**
+     * Check if this agent has a specific permission.
+     */
+    public function hasPermission(string $permission): bool
+    {
+        if (! $this->is_active) {
+            return false;
+        }
+
+        // Admins always have all permissions
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return in_array($permission, $this->effectivePermissions(), true);
+    }
+
+    /**
+     * Check if this agent has ANY of the given permissions.
+     *
+     * @param  array<int, string>  $permissions
+     */
+    public function hasAnyPermission(array $permissions): bool
+    {
+        foreach ($permissions as $permission) {
+            if ($this->hasPermission($permission)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

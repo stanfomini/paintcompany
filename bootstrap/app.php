@@ -5,6 +5,7 @@ use App\Http\Middleware\DevServerProtection;
 use App\Http\Middleware\EnsureAgentOnboarded;
 use App\Http\Middleware\EnsureCrewOnboarded;
 use App\Http\Middleware\EnsureCustomerOnboarded;
+use App\Http\Middleware\EnsureProspectorAccess;
 use App\Http\Middleware\EnsureUserIsAgent;
 use App\Http\Middleware\EnsureUserIsCrew;
 use App\Http\Middleware\EnsureUserIsCustomer;
@@ -78,6 +79,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth.customer.onboarded' => EnsureCustomerOnboarded::class,
             'auth.crew' => EnsureUserIsCrew::class,
             'auth.crew.onboarded' => EnsureCrewOnboarded::class,
+            'prospector.access' => EnsureProspectorAccess::class,
             // Spatie Permission middleware
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,

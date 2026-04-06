@@ -241,47 +241,79 @@
                     </flux:sidebar.group>
                 @endcanany
 
+                @php $prospectorAgent = \App\Models\Prospector\Agent::forCurrentUser(); @endphp
+                @if ($prospectorAgent)
                 <flux:sidebar.group :heading="__('Hot Dialer')" expandable :expanded="request()->routeIs('prospector.*')" class="grid">
                     <flux:sidebar.item icon="phone-arrow-up-right" :href="route('prospector.dashboard')" :current="request()->routeIs('prospector.dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
+                    @if ($prospectorAgent->hasPermission('dialer.use'))
                     <flux:sidebar.item icon="phone" :href="route('prospector.dialer')" :current="request()->routeIs('prospector.dialer')" wire:navigate>
                         {{ __('Dialer') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('reports.view'))
                     <flux:sidebar.item icon="chart-bar-square" :href="route('prospector.reports')" :current="request()->routeIs('prospector.reports')" wire:navigate>
                         {{ __('Reports') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('contacts.view'))
                     <flux:sidebar.item icon="users" :href="route('prospector.contacts')" :current="request()->routeIs('prospector.contacts')" wire:navigate>
                         {{ __('Contacts') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('campaigns.view'))
                     <flux:sidebar.item icon="megaphone" :href="route('prospector.campaigns')" :current="request()->routeIs('prospector.campaigns*')" wire:navigate>
                         {{ __('Campaigns') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('companies.view'))
                     <flux:sidebar.item icon="building-office-2" :href="route('prospector.companies')" :current="request()->routeIs('prospector.companies*')" wire:navigate>
                         {{ __('Companies') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('settings.twilio'))
                     <flux:sidebar.item icon="device-phone-mobile" :href="route('prospector.phone-numbers')" :current="request()->routeIs('prospector.phone-numbers')" wire:navigate>
                         {{ __('Phone Numbers') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('sequences.view'))
                     <flux:sidebar.item icon="arrow-path" :href="route('prospector.sequences')" :current="request()->routeIs('prospector.sequences*')" wire:navigate>
                         {{ __('Sequences') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('recordings.intelligence'))
                     <flux:sidebar.item icon="cpu-chip" :href="route('prospector.call-intelligence')" :current="request()->routeIs('prospector.call-intelligence')" wire:navigate>
                         {{ __('AI Intelligence') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('rvm.view'))
                     <flux:sidebar.item icon="speaker-wave" :href="route('prospector.rvm')" :current="request()->routeIs('prospector.rvm')" wire:navigate>
                         {{ __('Voicemail Drops') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('recordings.listen'))
                     <flux:sidebar.item icon="clock" :href="route('prospector.call-history')" :current="request()->routeIs('prospector.call-history')" wire:navigate>
                         {{ __('Call History') }}
                     </flux:sidebar.item>
-<flux:sidebar.item icon="cog-6-tooth" :href="route('prospector.settings')" :current="request()->routeIs('prospector.settings')" wire:navigate>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('agents.view'))
+                    <flux:sidebar.item icon="user-group" :href="route('prospector.agents')" :current="request()->routeIs('prospector.agents')" wire:navigate>
+                        {{ __('Agents & Roles') }}
+                    </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('settings.twilio'))
+                    <flux:sidebar.item icon="cog-6-tooth" :href="route('prospector.settings')" :current="request()->routeIs('prospector.settings')" wire:navigate>
                         {{ __('Settings') }}
                     </flux:sidebar.item>
+                    @endif
+                    @if ($prospectorAgent->hasPermission('settings.integrations'))
                     <flux:sidebar.item icon="arrow-path-rounded-square" :href="route('prospector.settings.integrations')" :current="request()->routeIs('prospector.settings.integrations')" wire:navigate>
                         {{ __('Integrations') }}
                     </flux:sidebar.item>
+                    @endif
                 </flux:sidebar.group>
+                @endif
 
                 @canany(['settings.company', 'team.manage_roles'])
                     <flux:sidebar.group :heading="__('Settings')" expandable :expanded="false" class="grid">
