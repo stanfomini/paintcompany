@@ -73,21 +73,18 @@ class TwilioVoiceController extends Controller
                 return response()->json(['error' => 'No active company configured.'], 422);
             }
 
-            // Create agent but explain why phone can't connect
-            Agent::firstOrCreate(
-                ['user_id' => $user->id, 'company_id' => $company->id],
-                ['status' => 'offline', 'max_concurrent_lines' => 1, 'wrap_up_seconds' => 30],
-            );
-
             return response()->json([
                 'error' => 'No company has Voice SDK credentials configured. Go to Prospector Settings > Accounts and add API Key SID, API Key Secret, and TwiML App SID.',
             ], 422);
         }
 
-        $agent = Agent::firstOrCreate(
-            ['user_id' => $user->id, 'company_id' => $company->id],
-            ['status' => 'offline', 'max_concurrent_lines' => 1, 'wrap_up_seconds' => 30],
-        );
+        $agent = Agent::where('user_id', $user->id)->first();
+
+        if (! $agent) {
+            return response()->json([
+                'error' => 'You do not have a Prospector agent record. Ask an administrator to grant you access on the Agents page.',
+            ], 403);
+        }
 
         try {
             $token = $this->conferenceService->generateAccessToken($agent, $company);

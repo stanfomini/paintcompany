@@ -50,7 +50,7 @@ class extends Component
             return;
         }
 
-        // Get a default company to assign (first active one)
+        // Get a default company (first active one) - admin can adjust later
         $company = Company::where('is_active', true)->first();
 
         if (! $company) {
@@ -62,10 +62,11 @@ class extends Component
             ]);
         }
 
-        // Create or update the agent record as admin
-        Agent::updateOrCreate(
-            ['user_id' => $user->id, 'company_id' => $company->id],
+        // Create or update the agent record as admin (one per user, no company in lookup)
+        $agent = Agent::updateOrCreate(
+            ['user_id' => $user->id],
             [
+                'company_id' => $company->id,
                 'role' => Permissions::ROLE_ADMIN,
                 'permissions' => null, // Use role defaults (all)
                 'is_active' => true,
@@ -74,6 +75,10 @@ class extends Component
                 'wrap_up_seconds' => 30,
             ],
         );
+
+        // Assign admin to all active companies by default
+        $allCompanyIds = Company::where('is_active', true)->pluck('id')->all();
+        $agent->companies()->sync($allCompanyIds);
 
         session()->flash('success', "{$user->name} has been designated as the Prospector administrator.");
 

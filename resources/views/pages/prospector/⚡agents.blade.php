@@ -26,7 +26,7 @@ class extends Component
 
     public bool $editIsActive = true;
 
-    public ?int $editCompanyId = null;
+    public array $editCompanyIds = [];
 
     public bool $useCustomPermissions = false;
 
@@ -37,7 +37,7 @@ class extends Component
 
     public string $addRole = 'agent';
 
-    public ?int $addCompanyId = null;
+    public array $addCompanyIds = [];
 
     public function boot(): void
     {
@@ -56,7 +56,7 @@ class extends Component
     #[Computed]
     public function agents(): \Illuminate\Support\Collection
     {
-        return Agent::with(['user', 'company'])
+        return Agent::with(['user', 'companies'])
             ->orderBy('role')
             ->orderBy('id')
             ->get();
@@ -94,7 +94,7 @@ class extends Component
 
         $this->addUserId = null;
         $this->addRole = Permissions::ROLE_AGENT;
-        $this->addCompanyId = $this->companies->first()?->id;
+        $this->addCompanyIds = $this->companies->pluck('id')->all();
         $this->showAddModal = true;
     }
 
@@ -107,7 +107,8 @@ class extends Component
         $this->validate([
             'addUserId' => ['required', 'exists:users,id'],
             'addRole' => ['required', 'in:'.implode(',', Permissions::allRoles())],
-            'addCompanyId' => ['required', 'exists:prospector_companies,id'],
+            'addCompanyIds' => ['required', 'array', 'min:1'],
+            'addCompanyIds.*' => ['exists:prospector_companies,id'],
         ]);
 
         // Only admins can create other admins
@@ -117,9 +118,11 @@ class extends Component
             return;
         }
 
-        Agent::create([
+        $primaryCompanyId = $this->addCompanyIds[0];
+
+        $agent = Agent::create([
             'user_id' => $this->addUserId,
-            'company_id' => $this->addCompanyId,
+            'company_id' => $primaryCompanyId,
             'role' => $this->addRole,
             'permissions' => null,
             'is_active' => true,
@@ -128,15 +131,17 @@ class extends Component
             'wrap_up_seconds' => 30,
         ]);
 
+        $agent->companies()->sync($this->addCompanyIds);
+
         $this->showAddModal = false;
-        $this->reset(['addUserId', 'addRole', 'addCompanyId']);
+        $this->reset(['addUserId', 'addRole', 'addCompanyIds']);
         unset($this->agents, $this->availableUsers);
         session()->flash('success', 'Agent created successfully.');
     }
 
     public function openEditModal(int $agentId): void
     {
-        $agent = Agent::findOrFail($agentId);
+        $agent = Agent::with('companies')->findOrFail($agentId);
 
         if (! $this->currentAgent?->hasPermission('agents.edit')) {
             abort(403);
@@ -152,7 +157,7 @@ class extends Component
         $this->editingAgentId = $agent->id;
         $this->editRole = $agent->role ?? Permissions::ROLE_AGENT;
         $this->editIsActive = (bool) $agent->is_active;
-        $this->editCompanyId = $agent->company_id;
+        $this->editCompanyIds = $agent->companies->pluck('id')->all();
         $this->useCustomPermissions = is_array($agent->permissions) && ! empty($agent->permissions);
         $this->editPermissions = $this->useCustomPermissions
             ? $agent->permissions
@@ -191,6 +196,11 @@ class extends Component
             abort(403);
         }
 
+        $this->validate([
+            'editCompanyIds' => ['required', 'array', 'min:1'],
+            'editCompanyIds.*' => ['exists:prospector_companies,id'],
+        ]);
+
         $agent = Agent::findOrFail($this->editingAgentId);
 
         // Only admins can change roles to/from admin
@@ -217,8 +227,10 @@ class extends Component
             'role' => $this->editRole,
             'permissions' => $this->useCustomPermissions ? $this->editPermissions : null,
             'is_active' => $this->editIsActive,
-            'company_id' => $this->editCompanyId,
+            'company_id' => $this->editCompanyIds[0], // Primary company
         ]);
+
+        $agent->companies()->sync($this->editCompanyIds);
 
         $this->showEditModal = false;
         unset($this->agents);
@@ -310,7 +322,17 @@ class extends Component
                             @endphp
                             <flux:badge :color="$roleColor" size="sm">{{ ucfirst($agent->role ?? 'agent') }}</flux:badge>
                         </td>
-                        <td class="px-4 py-3 text-zinc-700 dark:text-zinc-300">{{ $agent->company?->name ?? '—' }}</td>
+                        <td class="px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                            @if ($agent->companies->isNotEmpty())
+                                <div class="flex flex-wrap gap-1">
+                                    @foreach ($agent->companies as $c)
+                                        <flux:badge size="xs" color="zinc">{{ $c->name }}</flux:badge>
+                                    @endforeach
+                                </div>
+                            @else
+                                <span class="text-xs text-zinc-400">—</span>
+                            @endif
+                        </td>
                         <td class="px-4 py-3">
                             <span class="text-xs text-zinc-500">
                                 {{ count($agent->effectivePermissions()) }} {{ __('granted') }}
@@ -379,12 +401,16 @@ class extends Component
             </div>
 
             <div>
-                <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Company') }}</label>
-                <select wire:model="addCompanyId" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700">
+                <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Companies') }}</label>
+                <div class="space-y-1.5 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
                     @foreach ($this->companies as $company)
-                        <option value="{{ $company->id }}">{{ $company->name }}</option>
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" wire:model="addCompanyIds" value="{{ $company->id }}" class="rounded border-zinc-300" />
+                            {{ $company->name }}
+                        </label>
                     @endforeach
-                </select>
+                </div>
+                <p class="mt-1 text-xs text-zinc-500">{{ __('Agent will have access to selected companies. Their role and permissions apply to all of them.') }}</p>
             </div>
 
             <div class="flex justify-end gap-2 pt-2">
@@ -399,25 +425,27 @@ class extends Component
         <div class="space-y-5">
             <flux:heading size="lg">{{ __('Edit Agent') }}</flux:heading>
 
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Role') }}</label>
-                    <select wire:model.live="editRole" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700">
-                        <option value="agent">{{ __('Agent') }}</option>
-                        <option value="supervisor">{{ __('Supervisor') }}</option>
-                        @if ($this->currentAgent?->isAdmin())
-                            <option value="admin">{{ __('Admin') }}</option>
-                        @endif
-                    </select>
-                </div>
+            <div>
+                <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Role') }}</label>
+                <select wire:model.live="editRole" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700">
+                    <option value="agent">{{ __('Agent') }}</option>
+                    <option value="supervisor">{{ __('Supervisor') }}</option>
+                    @if ($this->currentAgent?->isAdmin())
+                        <option value="admin">{{ __('Admin') }}</option>
+                    @endif
+                </select>
+                <p class="mt-1 text-xs text-zinc-500">{{ __('Role applies to all assigned companies.') }}</p>
+            </div>
 
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Company') }}</label>
-                    <select wire:model="editCompanyId" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700">
-                        @foreach ($this->companies as $company)
-                            <option value="{{ $company->id }}">{{ $company->name }}</option>
-                        @endforeach
-                    </select>
+            <div>
+                <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Assigned Companies') }}</label>
+                <div class="space-y-1.5 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
+                    @foreach ($this->companies as $company)
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" wire:model="editCompanyIds" value="{{ $company->id }}" class="rounded border-zinc-300" />
+                            {{ $company->name }}
+                        </label>
+                    @endforeach
                 </div>
             </div>
 
