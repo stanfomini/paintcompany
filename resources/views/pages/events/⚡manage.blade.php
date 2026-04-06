@@ -1736,8 +1736,8 @@ class extends Component
                         </div>
 
                         <div class="space-y-3">
-                            <flux:input x-model="videoName" placeholder="{{ __('Source name (optional — auto from video title)') }}" size="sm" :disabled="videoExtracting" />
-                            <flux:input x-model="videoUrl" placeholder="{{ __('https://youtube.com/watch?v=... or https://example.com/video.mp4') }}" size="sm" :disabled="videoExtracting" />
+                            <flux:input x-model="videoName" placeholder="{{ __('Source name (optional — auto from video title)') }}" size="sm" x-bind:disabled="videoExtracting" />
+                            <flux:input x-model="videoUrl" placeholder="{{ __('https://youtube.com/watch?v=... or https://example.com/video.mp4') }}" size="sm" x-bind:disabled="videoExtracting" />
                         </div>
 
                         <template x-if="videoExtracting">
@@ -1748,8 +1748,8 @@ class extends Component
                         </template>
 
                         <div class="flex justify-end gap-2">
-                            <flux:button size="sm" variant="ghost" @click="$flux.modal('add-video-modal').close()" :disabled="videoExtracting">{{ __('Cancel') }}</flux:button>
-                            <flux:button size="sm" variant="primary" :disabled="videoExtracting"
+                            <flux:button size="sm" variant="ghost" @click="$flux.modal('add-video-modal').close()" x-bind:disabled="videoExtracting">{{ __('Cancel') }}</flux:button>
+                            <flux:button size="sm" variant="primary" x-bind:disabled="videoExtracting"
                                 @click="(async () => { const u = videoUrl; const n = videoName; videoUrl = ''; videoName = ''; await addVideoSource(u, n || 'Video'); $flux.modal('add-video-modal').close(); })()">
                                 {{ __('Add Video') }}
                             </flux:button>
