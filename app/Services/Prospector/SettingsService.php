@@ -69,9 +69,16 @@ class SettingsService
             return $settings[$key];
         }
 
-        // Check DEFAULTS for the default value
+        // Check DEFAULTS for the default value (cast same as DB values)
         if ($default === null && isset(self::DEFAULTS[$key])) {
-            return self::DEFAULTS[$key]['value'];
+            $meta = self::DEFAULTS[$key];
+
+            return match ($meta['type'] ?? 'string') {
+                'json' => is_string($meta['value']) ? (json_decode($meta['value'], true) ?? $meta['value']) : $meta['value'],
+                'boolean' => (bool) $meta['value'],
+                'integer' => (int) $meta['value'],
+                default => $meta['value'],
+            };
         }
 
         return $default;
@@ -119,7 +126,17 @@ class SettingsService
             // Merge defaults with database values (DB takes precedence)
             $result = [];
             foreach (self::DEFAULTS as $key => $meta) {
-                $result[$key] = $dbSettings[$key] ?? $meta['value'];
+                if (array_key_exists($key, $dbSettings)) {
+                    $result[$key] = $dbSettings[$key];
+                } else {
+                    // Cast default values the same way DB values are cast
+                    $result[$key] = match ($meta['type'] ?? 'string') {
+                        'json' => is_string($meta['value']) ? (json_decode($meta['value'], true) ?? $meta['value']) : $meta['value'],
+                        'boolean' => (bool) $meta['value'],
+                        'integer' => (int) $meta['value'],
+                        default => $meta['value'],
+                    };
+                }
             }
 
             // Include any DB settings not in defaults (custom settings)
