@@ -1732,7 +1732,8 @@ class extends Component
                             <div class="font-medium text-zinc-300">{{ __('Supported:') }}</div>
                             <div>{{ __('• Direct video files: .mp4, .webm, .ogg') }}</div>
                             <div>{{ __('• HLS live streams: .m3u8') }}</div>
-                            <div>{{ __('• YouTube, Vimeo, Twitch, Dailymotion (auto-extracted)') }}</div>
+                            <div>{{ __('• Vimeo, Twitch VODs, Dailymotion, Facebook (auto-extracted)') }}</div>
+                            <div class="text-amber-500/80 pt-1">{{ __('⚠ YouTube not supported (blocks cloud servers)') }}</div>
                         </div>
 
                         <div class="space-y-3">
@@ -2890,8 +2891,14 @@ class extends Component
                     if (!url || !sourceManager) return;
 
                     const lowerUrl = url.toLowerCase();
-                    const isPageUrl = lowerUrl.includes('youtube.com/') || lowerUrl.includes('youtu.be/') ||
-                                      lowerUrl.includes('vimeo.com/') || lowerUrl.includes('twitch.tv/') ||
+
+                    // YouTube blocks cloud server IPs — not supported without paid proxy
+                    if (lowerUrl.includes('youtube.com/') || lowerUrl.includes('youtu.be/')) {
+                        this.connectionError = 'YouTube is not supported (YouTube blocks cloud servers). Use a direct .mp4 URL, Vimeo, Twitch, or Dailymotion instead.';
+                        return;
+                    }
+
+                    const isPageUrl = lowerUrl.includes('vimeo.com/') || lowerUrl.includes('twitch.tv/') ||
                                       lowerUrl.includes('dailymotion.com/') || lowerUrl.includes('facebook.com/watch');
 
                     // If it's a page URL (not a direct file), extract direct URL via yt-dlp on backend
