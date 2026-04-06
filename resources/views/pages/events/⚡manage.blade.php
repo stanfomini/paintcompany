@@ -1670,7 +1670,16 @@ class extends Component
                 <flux:modal name="add-video-modal" class="w-full max-w-md">
                     <div class="space-y-4" x-data="{ videoUrl: '', videoName: '' }">
                         <flux:heading size="lg">{{ __('Add Video Source') }}</flux:heading>
-                        <flux:text class="text-sm text-zinc-400">{{ __('Enter a video URL (MP4, WebM, HLS) to add as a source.') }}</flux:text>
+                        <flux:text class="text-sm text-zinc-400">{{ __('Add a video as a source you can place in any scene slot.') }}</flux:text>
+
+                        <div class="rounded-lg bg-zinc-800/50 border border-zinc-700 p-3 text-xs text-zinc-400 space-y-1">
+                            <div class="font-medium text-zinc-300">{{ __('Supported:') }}</div>
+                            <div>{{ __('• Direct video files: .mp4, .webm, .ogg') }}</div>
+                            <div>{{ __('• HLS live streams: .m3u8') }}</div>
+                            <div class="font-medium text-zinc-300 pt-1">{{ __('NOT supported:') }}</div>
+                            <div>{{ __('• YouTube/Vimeo/Twitch page URLs (use RTMP In instead)') }}</div>
+                            <div>{{ __('• RTMP URLs (use RTMP In to receive RTMP streams)') }}</div>
+                        </div>
 
                         <div class="space-y-3">
                             <flux:input x-model="videoName" placeholder="{{ __('Source name (e.g., Intro Video)') }}" size="sm" />
@@ -1741,7 +1750,11 @@ class extends Component
                 <flux:modal name="rtmp-ingress-modal" class="w-full max-w-lg">
                     <div class="space-y-4">
                         <flux:heading size="lg">{{ __('RTMP Ingest') }}</flux:heading>
-                        <flux:text class="text-sm text-zinc-400">{{ __('Send an RTMP stream from OBS or another tool into your studio.') }}</flux:text>
+                        <flux:text class="text-sm text-zinc-400">{{ __('Generate an RTMP endpoint that someone with OBS, Streamlabs, or another broadcaster can stream INTO. Their feed will appear as a source in your compositor.') }}</flux:text>
+
+                        <div class="rounded-lg bg-blue-900/30 border border-blue-700/50 p-3 text-xs text-blue-200">
+                            {{ __('Click "Generate RTMP Endpoint" below. You will get a URL and stream key to give to whoever is broadcasting in.') }}
+                        </div>
 
                         <template x-if="ingressInfo">
                             <div class="space-y-3">
@@ -2812,25 +2825,88 @@ class extends Component
                 async addVideoSource(url, name) {
                     if (!url || !sourceManager) return;
 
+                    // Reject obvious non-video URLs early
+                    const lowerUrl = url.toLowerCase();
+                    if (lowerUrl.includes('youtube.com/watch') || lowerUrl.includes('youtu.be/') || lowerUrl.includes('vimeo.com/') || lowerUrl.includes('twitch.tv/')) {
+                        this.connectionError = 'YouTube/Vimeo/Twitch page URLs cannot be played directly. Use a direct media URL (.mp4, .webm) or an HLS stream (.m3u8).';
+                        return;
+                    }
+
                     const videoEl = document.createElement('video');
                     videoEl.crossOrigin = 'anonymous';
-                    videoEl.src = url;
                     videoEl.loop = true;
                     videoEl.muted = true; // Muted to allow autoplay
                     videoEl.playsInline = true;
                     videoEl.style.display = 'none';
                     document.body.appendChild(videoEl);
 
+                    // Detect HLS streams and load hls.js if needed
+                    const isHls = lowerUrl.includes('.m3u8') || lowerUrl.includes('m3u8?');
+                    let hlsInstance = null;
+
+                    if (isHls && !videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                        // Browser doesn't support native HLS — load hls.js
+                        try {
+                            const HlsModule = await import('https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js').catch(() => null);
+                            const Hls = HlsModule?.default || window.Hls;
+                            if (Hls && Hls.isSupported()) {
+                                hlsInstance = new Hls();
+                                hlsInstance.loadSource(url);
+                                hlsInstance.attachMedia(videoEl);
+                                await new Promise((resolve, reject) => {
+                                    hlsInstance.on(Hls.Events.MANIFEST_PARSED, resolve);
+                                    hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+                                        if (data.fatal) reject(new Error(data.details));
+                                    });
+                                    setTimeout(() => reject(new Error('HLS load timeout')), 10000);
+                                });
+                            } else {
+                                throw new Error('HLS not supported in this browser and hls.js failed to load');
+                            }
+                        } catch (err) {
+                            this.connectionError = 'Failed to load HLS stream: ' + err.message;
+                            videoEl.remove();
+                            return;
+                        }
+                    } else {
+                        // Standard video file (MP4, WebM, etc.)
+                        videoEl.src = url;
+                    }
+
+                    // Wait for video to be ready
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const onReady = () => {
+                                videoEl.removeEventListener('loadedmetadata', onReady);
+                                videoEl.removeEventListener('error', onError);
+                                resolve();
+                            };
+                            const onError = () => {
+                                videoEl.removeEventListener('loadedmetadata', onReady);
+                                videoEl.removeEventListener('error', onError);
+                                reject(new Error(videoEl.error?.message || 'Video failed to load. Make sure the URL points to a direct video file (.mp4, .webm) or HLS stream (.m3u8).'));
+                            };
+                            videoEl.addEventListener('loadedmetadata', onReady);
+                            videoEl.addEventListener('error', onError);
+                            setTimeout(() => reject(new Error('Video load timeout — check the URL is reachable and CORS-enabled.')), 15000);
+                        });
+                    } catch (err) {
+                        this.connectionError = err.message;
+                        if (hlsInstance) hlsInstance.destroy();
+                        videoEl.remove();
+                        return;
+                    }
+
                     try {
                         await videoEl.play();
                     } catch (err) {
-                        console.warn('[Studio] Video autoplay failed, trying with interaction:', err.message);
+                        console.warn('[Studio] Video autoplay failed:', err.message);
                     }
 
                     const key = 'video-' + Date.now();
                     const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
                     sourceManager.addSource(key, stream, name);
-                    this._videoSources.push({ key, el: videoEl });
+                    this._videoSources.push({ key, el: videoEl, hls: hlsInstance });
                     console.log(`[Studio] Video source added: ${name} (${key})`);
                 },
 
