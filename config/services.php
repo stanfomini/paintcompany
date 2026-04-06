@@ -91,6 +91,10 @@ return [
         'max_viewers' => (int) env('LIVEKIT_MAX_VIEWERS', 50),
     ],
 
+    'ytdlp' => [
+        'path' => env('YTDLP_PATH', '/home/forge/bin/yt-dlp'),
+    ],
+
     'color_visualizer' => [
         'enabled' => env('COLOR_VISUALIZER_ENABLED', false),
         'free_limit' => env('COLOR_VISUALIZER_FREE_LIMIT', 2),

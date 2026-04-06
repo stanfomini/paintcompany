@@ -538,6 +538,18 @@ class extends Component
         $this->dispatch('template-deleted', id: $templateId);
     }
 
+    // ─── Video URL Extraction ─────────────────────────────────────────
+
+    #[Renderless]
+    public function extractVideoUrl(string $pageUrl): ?array
+    {
+        if (empty($pageUrl)) {
+            return null;
+        }
+
+        return app(\App\Services\VideoUrlExtractorService::class)->extract($pageUrl);
+    }
+
     // ─── RTMP Ingress / Egress ────────────────────────────────────────
 
     #[Renderless]
@@ -1307,6 +1319,50 @@ class extends Component
                 </div>
 
                 {{-- ═══════════════════════════════════════════ --}}
+                {{-- VIDEO PLAYER CONTROLS --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <div x-show="videoPlayers.length > 0" x-cloak class="border-t border-zinc-700 bg-zinc-950 px-3 py-2 space-y-2" wire:ignore>
+                    <span class="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{{ __('Video Players') }}</span>
+                    <template x-for="player in videoPlayers" :key="player.key">
+                        <div class="rounded-lg bg-zinc-900 px-3 py-2 flex items-center gap-2">
+                            {{-- Play/Pause --}}
+                            <button type="button"
+                                @click="player.paused ? playVideoSource(player.key) : pauseVideoSource(player.key)"
+                                class="flex size-7 items-center justify-center rounded-full bg-zinc-700 text-white hover:bg-zinc-600 shrink-0">
+                                <template x-if="player.paused">
+                                    <svg class="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                </template>
+                                <template x-if="!player.paused">
+                                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                                </template>
+                            </button>
+
+                            {{-- Name --}}
+                            <span class="text-xs text-zinc-300 truncate min-w-0 max-w-[120px]" x-text="player.name"></span>
+
+                            {{-- Time / Seek --}}
+                            <span class="text-[10px] text-zinc-500 shrink-0 tabular-nums" x-text="formatVideoTime(player.currentTime)"></span>
+                            <input type="range" min="0" :max="player.duration || 0" :value="player.currentTime" step="0.1"
+                                @input="seekVideoSource(player.key, $event.target.value)"
+                                class="flex-1 min-w-0 h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-blue-500" />
+                            <span class="text-[10px] text-zinc-500 shrink-0 tabular-nums" x-text="formatVideoTime(player.duration)"></span>
+
+                            {{-- Volume --}}
+                            <flux:icon name="speaker-wave" class="size-3 text-zinc-500 shrink-0" />
+                            <input type="range" min="0" max="1" step="0.05" :value="player.volume"
+                                @input="setVideoVolume(player.key, $event.target.value)"
+                                class="w-16 h-1 rounded-full bg-zinc-700 appearance-none cursor-pointer accent-blue-500 shrink-0" />
+
+                            {{-- Remove --}}
+                            <button type="button" @click="removeVideoSource(player.key)"
+                                class="text-zinc-500 hover:text-red-400 shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                    </template>
+                </div>
+
+                {{-- ═══════════════════════════════════════════ --}}
                 {{-- SCENE SWITCHER + TAKE --}}
                 {{-- ═══════════════════════════════════════════ --}}
                 <div class="flex items-center gap-1.5 border-t border-zinc-700 bg-zinc-900 px-3 py-2">
@@ -1670,25 +1726,31 @@ class extends Component
                 <flux:modal name="add-video-modal" class="w-full max-w-md">
                     <div class="space-y-4" x-data="{ videoUrl: '', videoName: '' }">
                         <flux:heading size="lg">{{ __('Add Video Source') }}</flux:heading>
-                        <flux:text class="text-sm text-zinc-400">{{ __('Add a video as a source you can place in any scene slot.') }}</flux:text>
+                        <flux:text class="text-sm text-zinc-400">{{ __('Add a video as a source you can place in any scene slot. Use the player controls to play, pause, and seek.') }}</flux:text>
 
                         <div class="rounded-lg bg-zinc-800/50 border border-zinc-700 p-3 text-xs text-zinc-400 space-y-1">
                             <div class="font-medium text-zinc-300">{{ __('Supported:') }}</div>
                             <div>{{ __('• Direct video files: .mp4, .webm, .ogg') }}</div>
                             <div>{{ __('• HLS live streams: .m3u8') }}</div>
-                            <div class="font-medium text-zinc-300 pt-1">{{ __('NOT supported:') }}</div>
-                            <div>{{ __('• YouTube/Vimeo/Twitch page URLs (use RTMP In instead)') }}</div>
-                            <div>{{ __('• RTMP URLs (use RTMP In to receive RTMP streams)') }}</div>
+                            <div>{{ __('• YouTube, Vimeo, Twitch, Dailymotion (auto-extracted)') }}</div>
                         </div>
 
                         <div class="space-y-3">
-                            <flux:input x-model="videoName" placeholder="{{ __('Source name (e.g., Intro Video)') }}" size="sm" />
-                            <flux:input x-model="videoUrl" placeholder="{{ __('https://example.com/video.mp4') }}" size="sm" />
+                            <flux:input x-model="videoName" placeholder="{{ __('Source name (optional — auto from video title)') }}" size="sm" :disabled="videoExtracting" />
+                            <flux:input x-model="videoUrl" placeholder="{{ __('https://youtube.com/watch?v=... or https://example.com/video.mp4') }}" size="sm" :disabled="videoExtracting" />
                         </div>
 
+                        <template x-if="videoExtracting">
+                            <div class="flex items-center gap-2 text-xs text-blue-400">
+                                <svg class="animate-spin size-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                {{ __('Extracting video from URL...') }}
+                            </div>
+                        </template>
+
                         <div class="flex justify-end gap-2">
-                            <flux:button size="sm" variant="ghost" @click="$flux.modal('add-video-modal').close()">{{ __('Cancel') }}</flux:button>
-                            <flux:button size="sm" variant="primary" @click="addVideoSource(videoUrl, videoName || 'Video'); videoUrl = ''; videoName = ''; $flux.modal('add-video-modal').close()">
+                            <flux:button size="sm" variant="ghost" @click="$flux.modal('add-video-modal').close()" :disabled="videoExtracting">{{ __('Cancel') }}</flux:button>
+                            <flux:button size="sm" variant="primary" :disabled="videoExtracting"
+                                @click="(async () => { const u = videoUrl; const n = videoName; videoUrl = ''; videoName = ''; await addVideoSource(u, n || 'Video'); $flux.modal('add-video-modal').close(); })()">
                                 {{ __('Add Video') }}
                             </flux:button>
                         </div>
@@ -2243,6 +2305,8 @@ class extends Component
                 rtmpDestinations: [],   // [{name, url, active, egressId}]
                 ingressInfo: null,      // {url, streamKey, ingressId, active}
                 _videoSources: [],      // Track video URL sources for cleanup
+                videoExtracting: false, // True while yt-dlp is extracting URL
+                videoPlayers: [],       // [{key, name, paused, currentTime, duration}] reactive state for controls
 
                 get currentOverlays() {
                     return this.scenes[this.previewSceneIndex]?.overlays || [];
@@ -2825,17 +2889,36 @@ class extends Component
                 async addVideoSource(url, name) {
                     if (!url || !sourceManager) return;
 
-                    // Reject obvious non-video URLs early
                     const lowerUrl = url.toLowerCase();
-                    if (lowerUrl.includes('youtube.com/watch') || lowerUrl.includes('youtu.be/') || lowerUrl.includes('vimeo.com/') || lowerUrl.includes('twitch.tv/')) {
-                        this.connectionError = 'YouTube/Vimeo/Twitch page URLs cannot be played directly. Use a direct media URL (.mp4, .webm) or an HLS stream (.m3u8).';
-                        return;
+                    const isPageUrl = lowerUrl.includes('youtube.com/') || lowerUrl.includes('youtu.be/') ||
+                                      lowerUrl.includes('vimeo.com/') || lowerUrl.includes('twitch.tv/') ||
+                                      lowerUrl.includes('dailymotion.com/') || lowerUrl.includes('facebook.com/watch');
+
+                    // If it's a page URL (not a direct file), extract direct URL via yt-dlp on backend
+                    if (isPageUrl) {
+                        this.videoExtracting = true;
+                        try {
+                            const extracted = await this.$wire.extractVideoUrl(url);
+                            if (!extracted || !extracted.url) {
+                                this.connectionError = 'Could not extract video from that URL. The video may be private, age-restricted, or unsupported.';
+                                this.videoExtracting = false;
+                                return;
+                            }
+                            url = extracted.url;
+                            if (!name || name === 'Video') name = extracted.title || 'Video';
+                        } catch (err) {
+                            this.connectionError = 'Failed to extract video: ' + err.message;
+                            this.videoExtracting = false;
+                            return;
+                        }
+                        this.videoExtracting = false;
                     }
 
                     const videoEl = document.createElement('video');
                     videoEl.crossOrigin = 'anonymous';
-                    videoEl.loop = true;
-                    videoEl.muted = true; // Muted to allow autoplay
+                    videoEl.loop = false;
+                    videoEl.muted = false; // Audio plays into the stream
+                    videoEl.volume = 1.0;
                     videoEl.playsInline = true;
                     videoEl.style.display = 'none';
                     document.body.appendChild(videoEl);
@@ -2897,17 +2980,75 @@ class extends Component
                         return;
                     }
 
-                    try {
-                        await videoEl.play();
-                    } catch (err) {
-                        console.warn('[Studio] Video autoplay failed:', err.message);
-                    }
+                    // Don't auto-play — let the user control playback with the player UI
 
                     const key = 'video-' + Date.now();
                     const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
                     sourceManager.addSource(key, stream, name);
                     this._videoSources.push({ key, el: videoEl, hls: hlsInstance });
+
+                    // Add to reactive videoPlayers for the controls UI
+                    const playerState = {
+                        key,
+                        name,
+                        paused: true,
+                        currentTime: 0,
+                        duration: videoEl.duration || 0,
+                        volume: 1.0,
+                    };
+                    this.videoPlayers.push(playerState);
+
+                    // Sync video element events back to Alpine state
+                    videoEl.addEventListener('play', () => { playerState.paused = false; });
+                    videoEl.addEventListener('pause', () => { playerState.paused = true; });
+                    videoEl.addEventListener('timeupdate', () => { playerState.currentTime = videoEl.currentTime; });
+                    videoEl.addEventListener('durationchange', () => { playerState.duration = videoEl.duration; });
+                    videoEl.addEventListener('ended', () => { playerState.paused = true; });
+
                     console.log(`[Studio] Video source added: ${name} (${key})`);
+                },
+
+                // Video player control methods
+                playVideoSource(key) {
+                    const v = this._videoSources.find(s => s.key === key);
+                    if (v?.el) v.el.play().catch(err => console.warn('[Studio] Play failed:', err.message));
+                },
+
+                pauseVideoSource(key) {
+                    const v = this._videoSources.find(s => s.key === key);
+                    if (v?.el) v.el.pause();
+                },
+
+                seekVideoSource(key, time) {
+                    const v = this._videoSources.find(s => s.key === key);
+                    if (v?.el) v.el.currentTime = parseFloat(time);
+                },
+
+                setVideoVolume(key, volume) {
+                    const v = this._videoSources.find(s => s.key === key);
+                    if (v?.el) v.el.volume = parseFloat(volume);
+                    const player = this.videoPlayers.find(p => p.key === key);
+                    if (player) player.volume = parseFloat(volume);
+                },
+
+                removeVideoSource(key) {
+                    const v = this._videoSources.find(s => s.key === key);
+                    if (v) {
+                        v.el.pause();
+                        v.el.src = '';
+                        v.el.remove();
+                        if (v.hls) v.hls.destroy();
+                    }
+                    this._videoSources = this._videoSources.filter(s => s.key !== key);
+                    this.videoPlayers = this.videoPlayers.filter(p => p.key !== key);
+                    if (sourceManager) sourceManager.removeSource(key);
+                },
+
+                formatVideoTime(seconds) {
+                    if (!seconds || !isFinite(seconds)) return '0:00';
+                    const mins = Math.floor(seconds / 60);
+                    const secs = Math.floor(seconds % 60);
+                    return `${mins}:${secs.toString().padStart(2, '0')}`;
                 },
 
                 // ==============================================================
