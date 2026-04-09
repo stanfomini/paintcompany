@@ -1,9 +1,12 @@
 <?php
 
 use App\Models\CompanySetting;
+use App\Models\Keyword;
 use App\Models\Service;
 use App\Models\ServiceArea;
+use App\Services\Seo\KeywordResolver;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -63,6 +66,64 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
     public function localContent(): array
     {
         return $this->area->local_content ?? [];
+    }
+
+    /**
+     * @return array{primary: ?Keyword, secondary: \Illuminate\Support\Collection, supporting: \Illuminate\Support\Collection}
+     */
+    #[Computed]
+    public function keywordBundle(): array
+    {
+        return app(KeywordResolver::class)->forAreaOnly($this->area);
+    }
+
+    #[Computed]
+    public function primaryKeyword(): ?Keyword
+    {
+        return $this->keywordBundle['primary'];
+    }
+
+    #[Computed]
+    public function metaTitle(): string
+    {
+        $companyName = $this->company->company_name ?: 'Painting Made Easy Denver';
+        $fallback = $this->area->meta_title;
+
+        if (! $kw = $this->primaryKeyword) {
+            return $fallback;
+        }
+
+        $titled = Str::title($kw->keyword);
+        $withCompany = "{$titled} | {$companyName}";
+
+        return Str::length($withCompany) <= 60 ? $withCompany : Str::limit($titled, 60, '');
+    }
+
+    #[Computed]
+    public function metaDescription(): string
+    {
+        $base = $this->area->meta_description ?? '';
+
+        if (! $kw = $this->primaryKeyword) {
+            return $base;
+        }
+
+        if (Str::contains(Str::lower($base), Str::lower($kw->keyword))) {
+            return $base;
+        }
+
+        return Str::limit("Looking for {$kw->keyword}? {$base}", 160, '...');
+    }
+
+    #[Computed]
+    public function keywordSentence(): ?string
+    {
+        if (! $kw = $this->primaryKeyword) {
+            return null;
+        }
+
+        return $kw->customSentenceFor(null, $this->area)
+            ?? "When homeowners search for {$kw->keyword} in {$this->area->city}, they want a team that knows the neighborhood.";
     }
 
     #[Computed]
@@ -133,8 +194,8 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
 <x-slot:structuredData>{!! $this->structuredData !!}</x-slot:structuredData>
 
 <div>
-    @section('meta_title', $area->meta_title)
-    @section('meta_description', $area->meta_description)
+    @section('meta_title', $this->metaTitle)
+    @section('meta_description', $this->metaDescription)
     @section('canonical', route('areas.show', $area->slug))
     @section('og_title', $area->meta_title)
     @section('og_description', $area->meta_description)
@@ -189,6 +250,9 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
         <div class="max-w-5xl mx-auto px-4 sm:px-6">
             <div class="text-center mb-12">
                 <h2 class="font-heading text-3xl sm:text-4xl text-zinc-900 mb-4">{{ __('Why :city Homes Need Expert Painters', ['city' => $area->city]) }}</h2>
+                @if($this->keywordSentence)
+                    <p class="text-lg text-zinc-600 max-w-2xl mx-auto mb-3">{{ $this->keywordSentence }}</p>
+                @endif
                 @if(! empty($this->localContent['why_local']))
                     <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ $this->localContent['why_local'] }}</p>
                 @endif

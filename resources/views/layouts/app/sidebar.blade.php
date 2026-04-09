@@ -94,6 +94,11 @@
                             {{ __('Marketing') }}
                         </flux:sidebar.item>
                     @endcan
+                    @if (auth()->user()->isInternal())
+                        <flux:sidebar.item icon="magnifying-glass-circle" :href="route('seo.keywords.index')" :current="request()->routeIs('seo.*')" wire:navigate>
+                            {{ __('SEO Keywords') }}
+                        </flux:sidebar.item>
+                    @endif
                 </flux:sidebar.group>
 
                 @canany(['sales_territories.view', 'door_knocks.record', 'territory_dispatch.claim'])

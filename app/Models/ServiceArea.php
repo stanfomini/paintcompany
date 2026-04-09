@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ServiceArea extends Model
 {
@@ -83,5 +84,17 @@ class ServiceArea extends Model
     public function getUrlAttribute(): string
     {
         return route('areas.show', $this->slug);
+    }
+
+    public function keywordAssignments(): HasMany
+    {
+        return $this->hasMany(KeywordPageAssignment::class);
+    }
+
+    public function keywords(): BelongsToMany
+    {
+        return $this->belongsToMany(Keyword::class, 'keyword_page_assignments')
+            ->withPivot(['role', 'custom_sentence', 'service_id'])
+            ->withTimestamps();
     }
 }

@@ -2,15 +2,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="csrf-token" content="{{ csrf_token() }}">
 
-<title>{{ $title ?? config('app.name') }}</title>
+<title>@hasSection('meta_title')@yield('meta_title')@else{{ $title ?? config('app.name') }}@endif</title>
 
 <meta name="description" content="@yield('meta_description', 'Denver house painting with AI color preview, instant pricing & real-time tracking. Free estimates.')">
-<meta property="og:title" content="@yield('og_title', $title ?? config('app.name'))">
+<meta property="og:title" content="@hasSection('og_title')@yield('og_title')@elseif(View::hasSection('meta_title'))@yield('meta_title')@else{{ $title ?? config('app.name') }}@endif">
 <meta property="og:description" content="@yield('og_description', 'Denver house painting with AI color preview, instant pricing & real-time tracking. Free estimates.')">
 <meta property="og:url" content="@yield('og_url', url()->current())">
 <meta property="og:type" content="@yield('og_type', 'website')">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="@yield('og_title', $title ?? config('app.name'))">
+<meta name="twitter:title" content="@hasSection('og_title')@yield('og_title')@elseif(View::hasSection('meta_title'))@yield('meta_title')@else{{ $title ?? config('app.name') }}@endif">
 <meta name="twitter:description" content="@yield('og_description', 'Denver house painting with AI color preview, instant pricing & real-time tracking. Free estimates.')">
 <link rel="canonical" href="@yield('canonical', url()->current())">
 @hasSection('robots')

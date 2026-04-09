@@ -878,6 +878,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('calls.recording');
 });
 
+// SEO Hub (keyword management)
+Route::middleware(['auth', 'verified', 'auth.internal'])->prefix('seo')->name('seo.')->group(function () {
+    Route::get('/', fn () => redirect()->route('seo.keywords.index'))->name('index');
+    Route::livewire('/keywords', 'pages::seo.keywords-index')->name('keywords.index');
+    Route::livewire('/keywords/import', 'pages::seo.keywords-import')->name('keywords.import');
+    Route::livewire('/keywords/{keyword}/edit', 'pages::seo.keyword-edit')->name('keywords.edit');
+});
+
 // Marketing Hub
 Route::middleware(['auth', 'verified', 'auth.internal', 'permission:marketing.view'])->group(function () {
     Route::get('/marketing', fn () => redirect()->route('marketing.bot-tracker'))->name('marketing.index');

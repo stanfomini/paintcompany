@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Service extends Model
 {
@@ -62,5 +63,17 @@ class Service extends Model
     public function getUrlAttribute(): string
     {
         return route('services.show', $this->slug);
+    }
+
+    public function keywordAssignments(): HasMany
+    {
+        return $this->hasMany(KeywordPageAssignment::class);
+    }
+
+    public function keywords(): BelongsToMany
+    {
+        return $this->belongsToMany(Keyword::class, 'keyword_page_assignments')
+            ->withPivot(['role', 'custom_sentence', 'service_area_id'])
+            ->withTimestamps();
     }
 }

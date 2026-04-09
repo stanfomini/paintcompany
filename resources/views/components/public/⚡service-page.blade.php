@@ -1,9 +1,12 @@
 <?php
 
 use App\Models\CompanySetting;
+use App\Models\Keyword;
 use App\Models\LiveEvent;
 use App\Models\Service;
 use App\Models\ServiceArea;
+use App\Services\Seo\KeywordResolver;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -21,13 +24,71 @@ new #[Layout('components.layouts.guest')] class extends Component
 
     public function getTitle(): string
     {
-        return $this->service->title . ' Denver CO | Painting Made Easy Denver';
+        return $this->metaTitle;
     }
 
     #[Computed]
     public function company(): CompanySetting
     {
         return CompanySetting::getInstance();
+    }
+
+    /**
+     * @return array{primary: ?Keyword, secondary: \Illuminate\Support\Collection, supporting: \Illuminate\Support\Collection}
+     */
+    #[Computed]
+    public function keywordBundle(): array
+    {
+        return app(KeywordResolver::class)->forServiceOnly($this->service);
+    }
+
+    #[Computed]
+    public function primaryKeyword(): ?Keyword
+    {
+        return $this->keywordBundle['primary'];
+    }
+
+    #[Computed]
+    public function metaTitle(): string
+    {
+        $companyName = $this->company->company_name ?: 'Painting Made Easy Denver';
+        $fallback = $this->service->title.' Denver CO | '.$companyName;
+
+        if (! $kw = $this->primaryKeyword) {
+            return $fallback;
+        }
+
+        $titled = Str::title($kw->keyword);
+        $withCompany = "{$titled} | {$companyName}";
+
+        return Str::length($withCompany) <= 60 ? $withCompany : Str::limit($titled, 60, '');
+    }
+
+    #[Computed]
+    public function metaDescription(): string
+    {
+        $base = $this->service->meta_description ?? '';
+
+        if (! $kw = $this->primaryKeyword) {
+            return $base;
+        }
+
+        if (Str::contains(Str::lower($base), Str::lower($kw->keyword))) {
+            return $base;
+        }
+
+        return Str::limit("Looking for {$kw->keyword}? {$base}", 160, '...');
+    }
+
+    #[Computed]
+    public function keywordSentence(): ?string
+    {
+        if (! $kw = $this->primaryKeyword) {
+            return null;
+        }
+
+        return $kw->customSentenceFor($this->service, null)
+            ?? "Homeowners across Denver search for {$kw->keyword} when they want a team that delivers a professional finish.";
     }
 
     #[Computed]
@@ -146,8 +207,8 @@ new #[Layout('components.layouts.guest')] class extends Component
 <x-slot:structuredData>{!! $this->structuredData !!}</x-slot:structuredData>
 
 <div>
-    @section('meta_title', $service->title . ' Denver CO | Painting Made Easy Denver')
-    @section('meta_description', $service->meta_description)
+    @section('meta_title', $this->metaTitle)
+    @section('meta_description', $this->metaDescription)
     @section('canonical', route('services.show', $slug))
     @section('robots', 'index, follow')
 
@@ -171,6 +232,9 @@ new #[Layout('components.layouts.guest')] class extends Component
     <section class="bg-white py-16 sm:py-20">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <h2 class="font-heading text-3xl sm:text-4xl text-zinc-900 mb-8">Overview</h2>
+            @if($this->keywordSentence)
+                <p class="text-lg text-zinc-600 leading-relaxed mb-6">{{ $this->keywordSentence }}</p>
+            @endif
             @foreach(explode("\n\n", $service->overview ?? '') as $paragraph)
                 @if(trim($paragraph))
                     <p class="text-lg text-zinc-600 leading-relaxed mb-6 last:mb-0">{{ $paragraph }}</p>

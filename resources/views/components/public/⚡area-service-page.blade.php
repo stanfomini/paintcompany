@@ -1,9 +1,12 @@
 <?php
 
 use App\Models\CompanySetting;
+use App\Models\Keyword;
 use App\Models\LiveEvent;
 use App\Models\Service;
 use App\Models\ServiceArea;
+use App\Services\Seo\KeywordResolver;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -40,10 +43,69 @@ new #[Layout('components.layouts.guest')] class extends Component
         return $this->pivot?->custom_h1 ?? "{$this->service->title} in {$this->serviceArea->city}, Colorado";
     }
 
+    /**
+     * Resolved keyword bundle (primary + secondary + supporting) for this combo page.
+     *
+     * @return array{primary: ?Keyword, secondary: \Illuminate\Support\Collection, supporting: \Illuminate\Support\Collection}
+     */
+    #[Computed]
+    public function keywordBundle(): array
+    {
+        return app(KeywordResolver::class)->forCombo($this->service, $this->serviceArea);
+    }
+
+    #[Computed]
+    public function primaryKeyword(): ?Keyword
+    {
+        return $this->keywordBundle['primary'];
+    }
+
     #[Computed]
     public function metaTitle(): string
     {
-        return "{$this->service->title} {$this->serviceArea->city} CO | Painting Made Easy Denver";
+        $companyName = $this->company->company_name ?: 'Painting Made Easy Denver';
+        $fallback = "{$this->service->title} {$this->serviceArea->city} CO | {$companyName}";
+
+        if (! $kw = $this->primaryKeyword) {
+            return $fallback;
+        }
+
+        $titled = Str::title($kw->keyword);
+        $withCompany = "{$titled} | {$companyName}";
+
+        // Stay under the 60-char SEO budget. Drop the company suffix first if it overflows.
+        if (Str::length($withCompany) <= 60) {
+            return $withCompany;
+        }
+
+        return Str::limit($titled, 60, '');
+    }
+
+    #[Computed]
+    public function metaDescription(): string
+    {
+        $base = $this->service->meta_description ?? '';
+
+        if (! $kw = $this->primaryKeyword) {
+            return $base;
+        }
+
+        if (Str::contains(Str::lower($base), Str::lower($kw->keyword))) {
+            return $base;
+        }
+
+        return Str::limit("Looking for {$kw->keyword}? {$base}", 160, '...');
+    }
+
+    #[Computed]
+    public function keywordSentence(): ?string
+    {
+        if (! $kw = $this->primaryKeyword) {
+            return null;
+        }
+
+        return $kw->customSentenceFor($this->service, $this->serviceArea)
+            ?? "When homeowners search for {$kw->keyword} in {$this->serviceArea->city}, they want a team that knows the neighborhood.";
     }
 
     #[Computed]
@@ -164,7 +226,7 @@ new #[Layout('components.layouts.guest')] class extends Component
 <x-slot:structuredData>{!! $this->structuredData !!}</x-slot:structuredData>
 
 <div>
-    @section('meta_description', $this->service->meta_description)
+    @section('meta_description', $this->metaDescription)
     @section('meta_title', $this->metaTitle)
     @section('canonical', route('areas.service', [$this->serviceArea->slug, $this->service->slug]))
     @section('robots', 'index, follow')
@@ -219,6 +281,10 @@ new #[Layout('components.layouts.guest')] class extends Component
     <section class="bg-warm-50 py-12 sm:py-16">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <h2 class="font-heading text-2xl sm:text-3xl text-zinc-900 mb-6">Why {{ $this->serviceArea->city }} Homes Need Expert {{ $this->service->title }}</h2>
+
+            @if($this->keywordSentence)
+                <p class="text-lg text-zinc-600 leading-relaxed mb-4">{{ $this->keywordSentence }}</p>
+            @endif
 
             @if($this->pivot?->custom_intro)
                 <p class="text-lg text-zinc-600 leading-relaxed mb-6">{{ $this->pivot->custom_intro }}</p>
